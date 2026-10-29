@@ -2,6 +2,8 @@ name: Build Circuit FX Studio PSP beta
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,10 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile EBOOT.PBP
-        run: make -C psp
-      - name: Upload PSP beta
-        uses: actions/upload-artifact@v4
+        run: |
+          psp-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+      - name: Package installable app
+        run: |
+          mkdir -p package/PSP/GAME/CIRCUITFX/music package/PSP/GAME/CIRCUITFX/exports
+          cp build/EBOOT.PBP package/PSP/GAME/CIRCUITFX/
+          cp README.md package/README.txt
+          echo 'Put 44.1kHz stereo 16-bit PCM WAV songs here.' > package/PSP/GAME/CIRCUITFX/music/PUT_SONGS_HERE.txt
+          echo 'Completed mixes are saved here.' > package/PSP/GAME/CIRCUITFX/exports/MIXES_SAVED_HERE.txt
+      - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Beta-EBOOT
-          path: psp/EBOOT.PBP
+          name: Circuit-FX-Studio-Beta-1-PSP
+          path: package/
           if-no-files-found: error
