@@ -1,0 +1,19 @@
+name: Build Circuit FX Studio PSP beta
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: pspdev/pspdev:v20261001
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile EBOOT.PBP
+        run: make -C psp
+      - name: Upload PSP beta
+        uses: actions/upload-artifact@v4
+        with:
+          name: Circuit-FX-Studio-Beta-EBOOT
+          path: psp/EBOOT.PBP
+          if-no-files-found: error
