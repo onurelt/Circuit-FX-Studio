@@ -70,7 +70,8 @@ int render_mix(const char *ap,const char *bp,const char *op,double seconds,int c
    else{ga=1-t;gb=t;}
    for(int c=0;c<2;c++)mix[i*2+c]=(int16_t)lrintf(ab[i*2+c]*ga+bb[i*2+c]*gb);
   }
-  if(write_block(out,mix,n))goto finish;at+=n;
+  if(write_block(out,mix,n))goto finish;
+  at+=n;
  }
  if(copy(&b,out,overlap,tail))goto finish;
  if(wav_finish(out)){fail("Cannot finalize WAV header.");goto finish;}rc=0;
@@ -78,5 +79,5 @@ int render_mix(const char *ap,const char *bp,const char *op,double seconds,int c
 }
 #ifdef HOST_TEST
 #include <stdlib.h>
-int main(int argc,char **argv){if(argc!=8)return 2;int r=render_mix(argv[1],argv[2],argv[3],atof(argv[4]),atoi(argv[5]),atoi(argv[6]),0);if(r)fprintf(stderr,"%s\n",render_error);return r?1:0;}
+int main(int argc,char **argv){if(argc!=7)return 2;int r=render_mix(argv[1],argv[2],argv[3],atof(argv[4]),atoi(argv[5]),atoi(argv[6]),0);if(r)fprintf(stderr,"%s\n",render_error);return r?1:0;}
 #endif

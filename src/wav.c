@@ -15,7 +15,9 @@ int wav_append(FILE *f,const int16_t *s,uint32_t frames){
 int wav_finish(FILE *f){
  if(!f)return -1;
  long end=ftell(f);if(end<44|| (unsigned long)end>0xFFFFFFFFUL)return -1;
- if(fseek(f,4,SEEK_SET))return -1;u32(f,(uint32_t)end-8);
- if(fseek(f,40,SEEK_SET))return -1;u32(f,(uint32_t)end-44);
+ if(fseek(f,4,SEEK_SET))return -1;
+ u32(f,(uint32_t)end-8);
+ if(fseek(f,40,SEEK_SET))return -1;
+ u32(f,(uint32_t)end-44);
  return fflush(f)==0?0:-1;
 }

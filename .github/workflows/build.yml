@@ -5,6 +5,14 @@ on:
 permissions:
   contents: read
 jobs:
+  audio-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test streaming audio engine
+        run: |
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c -lm -o tests/render
+          python3 tests/test_audio.py
   build:
     runs-on: ubuntu-latest
     container:
