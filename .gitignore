@@ -1,0 +1,5 @@
+/build/
+/tests/render
+/ui-preview.ppm
+/ui-preview.png
+__pycache__/

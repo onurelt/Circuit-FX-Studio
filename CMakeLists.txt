@@ -1,8 +1,17 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.16)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "Vita toolchain")
+endif()
 project(CircuitFX C)
-add_executable(CircuitFX psp/main.c src/render.c src/wav.c)
-target_include_directories(CircuitFX PRIVATE src)
-target_compile_options(CircuitFX PRIVATE -O2 -Wall -Wextra)
-# Resolve runtime and debug dependencies before emitting firmware import stubs.
-target_link_libraries(CircuitFX PRIVATE "-Wl,--start-group" m c pspdebug pspsdk cglue pthreadglue "-Wl,--end-group" pspdisplay pspge pspctrl pspaudio psppower)
-create_pbp_file(TARGET CircuitFX TITLE "Circuit FX Studio Beta 1" VERSION 00.60 BUILD_PRX)
+include("${VITASDK}/share/vita.cmake" REQUIRED)
+add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c)
+target_include_directories(CircuitFX PRIVATE src vita)
+target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
+target_link_libraries(CircuitFX m SceDisplay_stub SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub)
+vita_create_self(CircuitFX.self CircuitFX UNSAFE)
+vita_create_vpk(CircuitFX-Beta1.vpk CFXS00001 CircuitFX.self
+  VERSION 01.00 NAME "Circuit FX Studio"
+  FILE assets/icon0.png sce_sys/icon0.png
+  FILE assets/bg.png sce_sys/livearea/contents/bg.png
+  FILE assets/startup.png sce_sys/livearea/contents/startup.png
+  FILE assets/template.xml sce_sys/livearea/contents/template.xml)
