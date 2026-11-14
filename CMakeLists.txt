@@ -7,6 +7,9 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c src/presets.c src/mp3_import.c)
 target_include_directories(CircuitFX PRIVATE src vita third_party/minimp3)
 target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
+# Keep a 64 KiB gap after the RX segment so vita-elf-create can append SCE
+# module metadata without colliding with the first RW load segment.
+target_link_options(CircuitFX PRIVATE "-Wl,--section-start=.init_array=0x81080000")
 target_link_libraries(CircuitFX m SceDisplay_stub SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub SceRtc_stub)
 vita_create_self(CircuitFX.self CircuitFX UNSAFE)
 file(GLOB SFX_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/sfx/*")
