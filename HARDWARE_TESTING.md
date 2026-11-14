@@ -79,3 +79,11 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Select a fresh MP3: song name/duration should appear before PCM conversion. Generate a preview to trigger conversion, cancel once, then retry. Relaunch and confirm `mp3_cache_hit` and `waveform_cache_hit` with no repeated full conversion.
 - Switch songs repeatedly while a waveform is still building; verify no stale waveform is shown for the newly selected song. Try a damaged MP3, missing source, nearly full storage and a forced close during a build. Relaunch, check no partial cache remains, then load/preview/export successfully.
 - Preview, replay and export with every effect and sample setting. Listen for stutter; check exported duration and sample content against 01.07. Test Triangle exit, PS/LiveArea close and suspend/resume after playback and during waveform generation. Save `session.log` before relaunch; attach it with Vita model and firmware for performance comparison.
+
+## Version 01.09 interface checks
+
+- Install over 01.08 at stock clocks. Verify both compact track bars open the music browser and show the actual names and durations. Waveforms should take about half the 960×544 display and remain visible on all three tabs.
+- Drag the waves in both rows, pinch in/out, use +/− and FIT, then drag both cue markers. Verify cue fields, transition shading/endpoints, precise keypad edits, and resulting preview/export timestamps. Try cues at 0, near song end, and songs of very different durations.
+- Tap each of five Transitions cards and compare its audio to the displayed behavior. In Effects, toggle each card on/off, combine effects, adjust global intensity and verify preview/export changes. BPM controls should appear only when relevant to a preset.
+- Browse every bank and four pages in Presets; select a card, open Detail / Apply, audition WAV effects, reverse/speed them and apply. Check selected recipe, BPM, cues, duration, preview and export. Test physical D-pad, Square, START, L/R tab changes, SELECT rescan and Triangle exit.
+- During playback, tap either Stop or Preview, then Replay and Export. Repeat navigation and song changes while a waveform is building; check cached waveform hits and absence of UI stalls. Test modal cancellation, low storage, PS/LiveArea close and re-launch. Capture `session.log` before relaunch for CPU submission timing.

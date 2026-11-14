@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 1.8
+name: Build Circuit FX Studio Vita Beta 1.9
 on:
   push:
   workflow_dispatch:
@@ -57,7 +57,7 @@ jobs:
           python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta1.8
+          name: Circuit-FX-Studio-Vita-Beta1.9
           path: |
             build/CircuitFX-Beta1.vpk
             README.md

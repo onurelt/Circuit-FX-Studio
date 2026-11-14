@@ -210,16 +210,45 @@ static void invalidate(void) {
   screen_dirty = 1;
 }
 static int gesture_deck = -1, gesture_cue, gesture_x, gesture_distance;
+static void wave_bounds(double *left,double *right) {
+  *left=0; *right=0;
+  for (int d=0;d<2;d++) if (view.songs[d]) {
+    *left=fmin(*left,-view.wave_origin[d]);
+    *right=fmax(*right,view.lengths[d]-view.wave_origin[d]);
+  }
+}
+static void clamp_wave(void) {
+  double left,right;
+  wave_bounds(&left,&right);
+  double span=right-left;
+  if (span<5) span=5;
+  view.wave_window=fmax(5,fmin(view.wave_window,span));
+  view.wave_pan=fmax(left,fmin(view.wave_pan,right-view.wave_window));
+  screen_dirty=1;
+}
+static void zoom_wave(double factor) {
+  double center=view.wave_pan+view.wave_window*.5;
+  view.wave_window*=factor;
+  view.wave_pan=center-view.wave_window*.5;
+  clamp_wave();
+}
+static void fit_wave(void) {
+  double left,right;
+  wave_bounds(&left,&right);
+  view.wave_pan=left;
+  view.wave_window=fmax(5,right-left);
+  screen_dirty=1;
+}
 static void wave_gesture(int pressed) {
   if (!touches) { gesture_deck = -1; return; }
   int x = touch_points[0][0], y = touch_points[0][1];
-  if (pressed && x >= 54 && x < 934 && y >= 176 && y < 253) {
-    gesture_deck = y < 216 ? 0 : 1;
+  if (pressed && x >= 54 && x < 934 && y >= 80 && y < 309) {
+    gesture_deck = y < 194 ? 0 : 1;
     double length = view.lengths[gesture_deck];
     if (length <= 0) { gesture_deck = -1; return; }
-    double span = view.wave_span[gesture_deck];
+    double span = view.wave_window;
     double cue = gesture_deck ? view.settings.start_b : view.settings.start_a;
-    double cue_x = 54 + 880 * (cue - view.wave_start[gesture_deck]) / span;
+    double cue_x = 54 + 880 * (cue-view.wave_origin[gesture_deck]-view.wave_pan) / span;
     gesture_cue = fabs(x - cue_x) < 24;
     gesture_x = x;
     gesture_distance = 0;
@@ -228,30 +257,27 @@ static void wave_gesture(int pressed) {
   }
   if (gesture_deck < 0) return;
   int d = gesture_deck;
-  double length = view.lengths[d], span = view.wave_span[d];
+  double length = view.lengths[d], span = view.wave_window;
   if (touches > 1 && !gesture_cue) {
     int distance = abs(touch_points[1][0] - x);
     if (gesture_distance > 12 && distance > 12) {
-      double new_span = fmax(5, fmin(length,
-                               span * gesture_distance / distance));
+      double new_span = span * gesture_distance / distance;
       double middle = (x + touch_points[1][0]) / 2.0;
-      double anchor = view.wave_start[d] + span * (middle - 54) / 880;
-      view.wave_start[d] = fmax(0, fmin(length-new_span,
-                            anchor - new_span * (middle-54) / 880));
-      view.wave_span[d] = new_span;
-      screen_dirty = 1;
+      double anchor = view.wave_pan + span * (middle - 54) / 880;
+      view.wave_pan = anchor - new_span * (middle-54) / 880;
+      view.wave_window = new_span;
+      clamp_wave();
     }
     gesture_distance = distance;
   } else if (gesture_cue) {
-    double value = view.wave_start[d] + span * (x - 54) / 880;
+    double value = view.wave_origin[d]+view.wave_pan+span*(x-54)/880;
     double *cue = d ? &view.settings.start_b : &view.settings.start_a;
     value = round(fmax(0, fmin(length, value)) * 1000) / 1000;
     if (value != *cue) { *cue = value; screen_dirty = 1; }
   } else {
     if (x != gesture_x) {
-      view.wave_start[d] = fmax(0, fmin(length-span,
-                              view.wave_start[d] - (x-gesture_x)*span/880));
-      screen_dirty = 1;
+      view.wave_pan -= (x-gesture_x)*span/880;
+      clamp_wave();
     }
     gesture_distance = 0;
   }
@@ -662,6 +688,7 @@ static void browse(int deck) {
             fmax(0, view.lengths[0] - view.settings.duration);
       else
         view.settings.start_b = 0;
+      view.wave_origin[deck] = deck ? view.settings.start_b : view.settings.start_a;
       wave_request(deck, path, frames, offset);
       prune_cache();
       char timing[128];
@@ -816,7 +843,9 @@ static int play_file(const char *path, int transform_sfx) {
     unsigned hit = buttons();
     if ((hit & (SCE_CTRL_CIRCLE | SCE_CTRL_START | SCE_CTRL_SQUARE)) ||
         (touch_press() &&
-         (view.preset_browser || ui_hit_test(touch_x, touch_y) == 10)))
+         (view.preset_browser ||
+          ui_hit_test_for_tab(&view,touch_x,touch_y)==101 ||
+          ui_hit_test_for_tab(&view,touch_x,touch_y)==10)))
       atomic_store(&audio_stop, 1);
     sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
   }
@@ -930,7 +959,8 @@ static void export_mix(void) {
 }
 static void browse_presets(void) {
   view.preset_browser = 1;
-  view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 65;
+  if (view.selected_preset < 1 || view.selected_preset > PRESET_COUNT)
+    view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 65;
   int redraw = 1;
   while (1) {
     if (redraw) {
@@ -1011,7 +1041,7 @@ static void browse_presets(void) {
       }
       snprintf(path, sizeof(path), "app0:sfx/%02d.wav", selected.sample_id);
       if (!selected.sample_id || play_file(path, 1))
-        message("Cannot play bundled WAV. Reinstall Beta 1.7.");
+        message("Cannot play bundled WAV. Reinstall Beta 1.9.");
       else
         message("WAV audition finished. Settings apply to audition and mix.");
     }
@@ -1046,6 +1076,8 @@ static void browse_presets(void) {
     sceKernelDelayThread(4000);
   }
   view.preset_browser = 0;
+  view.preset_bank = (view.selected_preset-1)/16;
+  view.preset_page = ((view.selected_preset-1)%16)/5;
   screen_dirty = 1;
 }
 static void edit_time(int row) {
@@ -1114,6 +1146,7 @@ static void edit_time(int row) {
         continue;
       }
       *value = round(number * 1000) / 1000;
+      if (row==2 || row==3) view.wave_origin[row-2]=*value;
       if (row == 13)
         view.settings.bpm = extra;
       else if (row == 14)
@@ -1128,6 +1161,64 @@ static void edit_time(int row) {
   view.editing = 0;
   screen_dirty = 1;
 }
+static void card_action(int index) {
+  if (index<0 || index>4) return;
+  if (view.tab==2) {
+    int id=view.preset_bank*16+view.preset_page*5+index+1;
+    if (id<=(view.preset_bank+1)*16) {
+      view.selected_preset=id;
+      screen_dirty=1;
+    }
+    return;
+  }
+  view.effect_index=index;
+  if (view.tab==0) {
+    view.settings.preset_id=0;
+    view.settings.effects=index==4 ? FX_QUICK_CUT :
+                           FX_CROSSFADE | (index ? 1u<<index : 0);
+    invalidate();
+    message("Transition selected. Preview to hear it.");
+  } else {
+    view.settings.effects^=1u<<index;
+    invalidate();
+    message("Effect stack updated. Preview to hear it.");
+  }
+}
+static void direct_action(int action) {
+  if (action>=110 && action<=112) {
+    view.tab=action-110;
+    screen_dirty=1;
+  } else if (action>=120 && action<125) card_action(action-120);
+  else if (action>=130 && action<138) {
+    view.preset_bank=action-130;
+    view.preset_page=0;
+    view.selected_preset=view.preset_bank*16+1;
+    screen_dirty=1;
+  } else if (action==140 || action==141) {
+    view.preset_page=(view.preset_page+(action==141?1:3))%4;
+    screen_dirty=1;
+  } else if (action==142) browse_presets();
+  else if (action==150) {
+    view.settings.effects^=1u<<view.effect_index;
+    invalidate();
+  } else if (action==151 || action==152) {
+    float delta=action==151?-.05f:.05f;
+    view.settings.intensity=fmaxf(0,fminf(1,
+                      roundf((view.settings.intensity+delta)*20)/20));
+    invalidate();
+  } else if (action==153 || action==154) {
+    view.settings.bpm=fmaxf(60,fminf(200,
+                       view.settings.bpm+(action==153?-1:1)));
+    invalidate();
+  } else if (action==101) message("Playback is stopped. Preview or Replay.");
+  else if (action==102) {
+    if (ready) {
+      if (play()) message("Preview playback failed.");
+    } else message("Generate a preview first.");
+  } else if (action==103) zoom_wave(1.5);
+  else if (action==104) zoom_wave(1/1.5);
+  else if (action==105) fit_wave();
+}
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir(ROOT, 0777);
@@ -1138,7 +1229,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.8 / 01.08\n");
+    fprintf(log, "Circuit FX Vita Beta 1.9 / 01.09\n");
     fclose(log);
   }
   if (vita2d_init() < 0 || ui_gpu_init() < 0) {
@@ -1158,6 +1249,9 @@ int main(void) {
                                 .sample_reverse = 0};
   view.settings.bpm = 128;
   view.settings.intensity = 1;
+  view.wave_window=45;
+  view.wave_pan=-20;
+  view.selected_preset=65;
   scan();
   message("Choose two songs. WAV or MP3. Triangle: exit safely.");
   while (1) {
@@ -1165,10 +1259,14 @@ int main(void) {
     unsigned hit = buttons();
     int touched = touch_press();
     wave_gesture(touched);
-    int tap = touched && gesture_deck < 0 ? ui_hit_test(touch_x, touch_y) : -1;
+    int tap = touched && gesture_deck < 0 ?
+              ui_hit_test_for_tab(&view,touch_x,touch_y) : -1;
     if (hit || tap >= 0)
       screen_dirty = 1;
-    if (tap >= 0) {
+    if (tap>=100) {
+      direct_action(tap);
+      tap=-1;
+    } else if (tap >= 0) {
       view.row = tap;
       hit |= SCE_CTRL_CROSS;
     }
@@ -1182,6 +1280,15 @@ int main(void) {
       scan();
       message("Song list refreshed.");
     }
+    if (view.row>4 && (hit&(SCE_CTRL_LTRIGGER|SCE_CTRL_RTRIGGER))) {
+      view.tab=(view.tab+(hit&SCE_CTRL_RTRIGGER?1:2))%3;
+      screen_dirty=1;
+    }
+    if (view.tab==2 && view.row>=5 && view.row<=9 &&
+        (hit&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT))) {
+      view.preset_page=(view.preset_page+(hit&SCE_CTRL_RIGHT?1:3))%4;
+      screen_dirty=1;
+    }
     if (view.row >= 2 && view.row <= 4 &&
         (hit & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
       double step = (held & SCE_CTRL_LTRIGGER)   ? .001
@@ -1194,6 +1301,7 @@ int main(void) {
       *value = round(*value * 1000) / 1000;
       double max = view.row == 4 ? 120 : view.lengths[view.row - 2];
       *value = fmax(view.row == 4 ? .1 : 0, fmin(max, *value));
+      if (view.row<4) view.wave_origin[view.row-2]=*value;
       invalidate();
       message("Settings changed. Preview to hear the result.");
     }
@@ -1203,8 +1311,7 @@ int main(void) {
       else if (view.row >= 2 && view.row <= 4)
         edit_time(view.row);
       else if (view.row >= 5 && view.row <= 9) {
-        view.settings.effects ^= 1u << (view.row - 5);
-        invalidate();
+        card_action(view.row-5);
       } else if (view.row == 10)
         preview();
       else if (view.row == 11)

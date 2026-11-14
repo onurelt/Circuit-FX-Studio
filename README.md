@@ -2,6 +2,16 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.9 — waveform-first interface (01.09)
+
+The dashboard now follows the supplied dark cyan/magenta reference at native Vita resolution. Compact Track A/B selectors sit above a shared, zoomable two-track timeline that occupies about half the display. Drag the waveform to pan, pinch or use +/− to zoom, tap FIT for the full available song range, and drag each cue marker. Both songs' transition intervals and endpoints are shaded directly on their waveforms. The existing cached 8,192-bin envelopes are reused; switching tabs never decodes or rescans songs.
+
+Below the timeline are Preview/Stop/Replay, precise A/B cue and duration editors, zoom controls, Export, and three tabs. **Transitions** chooses one of the five core transition types; selecting Echo, Filter or Bass also retains the smooth crossfade handoff, while Quick Cut uses its existing 20 ms handoff. **Effects** lets you toggle and combine the five manual effects and change global effect intensity. **Presets** organizes all 128 existing recipes in eight categories, including 25 bundled WAV sounds and their reverse variants. Select a card, then Detail / Apply to audition WAV effects, adjust reverse/speed and apply the preset. Preset BPM is adjustable in its tab.
+
+The illustrated curves show the behavior of existing effects, not an editable curve parameter. The reference's per-effect Mix knob and album-art tiles are not implemented: the mixer exposes global effect intensity, while album art has no current loader. Seven advanced modifiers (gate, roll, ring, noise, dip, stereo echo and high-pass) remain available through their existing presets rather than separate manual toggles. No audio DSP or export path was changed.
+
+GPU batched waveforms and cached curve vertices keep drawing work bounded. Host layout/touch checks and audio tests pass; Vita touch feel, actual frame times, playback/export and shell stability still need an on-device stock-clock check.
+
 ## Beta 1.8 — Vita2D, lazy MP3 import and full-song waveforms (01.08)
 
 The 960×544 interface now draws through Vita2D: GPU gradient panels, cached glyph atlases and batched waveform bars replace the software framebuffer. It redraws on state changes and uses the Vita's normal clock. Touch targets and all effect controls remain in place.
