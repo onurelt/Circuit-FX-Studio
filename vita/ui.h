@@ -15,7 +15,6 @@ typedef struct {
   int first;
   char status[180];
   unsigned short peaks[2][WAVE_BINS];
-  double wave_start[2], wave_span[2];
   double wave_pan, wave_window, wave_origin[2];
   int tab, effect_index, preset_bank, preset_page;
   double play_position, preview_length;
@@ -30,7 +29,6 @@ int ui_gpu_init(void);
 void ui_gpu_fini(void);
 #endif
 /* Shared with native touch routing and host layout tests. */
-int ui_hit_test(int x, int y);
 int ui_hit_test_for_tab(const View *v, int x, int y);
 int ui_key_test(int x, int y);
 double ui_timeline_pre(const View *v);

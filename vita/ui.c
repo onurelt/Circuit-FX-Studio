@@ -196,10 +196,6 @@ int ui_hit_test_for_tab(const View *v, int x, int y) {
     return 120 + (x - 14) / 188;
   return -1;
 }
-int ui_hit_test(int x, int y) {
-  static const View v = {0};
-  return ui_hit_test_for_tab(&v,x,y);
-}
 int ui_key_test(int x, int y) {
   if (y >= 391 && y < 435) {
     if (x >= 264 && x < 474)
@@ -456,7 +452,6 @@ int main(int argc, char **argv) {
   for (int d = 0; d < 2; d++) {
     for (int i = 0; i < WAVE_BINS; i++)
       v.peaks[d][i] = 3000 + 22000 * fabs(sin(i * .17) * sin(i * .013 + d));
-    v.wave_span[d] = v.lengths[d];
   }
   if (argc > 1 && strcmp(argv[1], "editor") == 0) {
     v.editing = 1;

@@ -680,8 +680,6 @@ static void browse(int deck) {
                songs[view.browser_pos]);
       view.songs[deck] = selected_names[deck];
       view.lengths[deck] = (double)frames / 44100;
-      view.wave_start[deck] = 0;
-      view.wave_span[deck] = view.lengths[deck];
       invalidate();
       if (deck == 0)
         view.settings.start_a =
