@@ -50,7 +50,7 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - The renderer uses bounded sample memory and linear resampling. Confirm export speed and system responsiveness on Vita, especially 0.5x and 2.0x, and after many consecutive auditions.
 - Install over 01.04 with VitaShell. Confirm VPK size, LiveArea launch and effect resources load from `app0:sfx`.
 
-## Version 01.06 additions
+## Version 01.06 additions (historical)
 
 - Install over 01.05. Copy MP3 and WAV songs into the music folder; refresh with SELECT and verify both extensions appear once and show the right track name.
 - Load stereo 44.1 kHz MP3 and mono 22.05 kHz MP3. Confirm a conversion progress screen, correct duration, stereo output for mono input, visible peaks, exact cue editing, preview and WAV export.
@@ -60,3 +60,14 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Re-select the same MP3 on one deck to confirm the in-session cache is reused. Switch that deck to WAV and confirm its old cache is freed.
 - Exit with Triangle and verify decoded caches are removed. Separately force-close during conversion, relaunch, and verify startup removes stale cache files without touching originals.
 - Compare the converted-cache preview with the exported mix and check long-track decoding time, audio quality, memory use and app responsiveness on real hardware.
+
+## Version 01.07 performance and stability additions
+
+- Install over 01.06, load a long MP3, exit with Triangle, relaunch, and select it again. The second load should log `TIMING mp3_cache_hit=1` and should not show a decode progress screen. Select the same MP3 on both decks and confirm the second selection reuses the same cached WAV.
+- Repeat switching between at least 10 WAV/MP3 songs, including the same files on both decks. Confirm names, durations, cues, waveform peaks, preview and export remain correct. Repeated loads should report waveform cache hits.
+- While importing a long MP3, move through physical buttons and tap the progress dialog to cancel. Retry the same MP3 and complete an import. Check that no `.part` file is left behind and no controls remain stuck.
+- Test a malformed MP3 and an MP3 whose decoded output would exceed 512 MiB. The app should show an error, retain the prior deck, and remove partial files. Separately test nearly-full storage with expendable files; expect a clear write/cache error and a usable app after freeing space.
+- Fill the conversion cache past 512 MiB using expendable MP3s. Confirm oldest unpinned entries are evicted, selected songs keep playing, and restart prunes the cache back under the limit when possible.
+- Change cues/effects repeatedly while watching `session.log`. `TIMING timeline_ms` should stay small and cue/effect edits must not trigger waveform-file reads. Dashboard idle should not increment draw calls continuously; navigating should redraw promptly.
+- Verify `session.log` includes scan, song selection, import/cache, waveform, timeline, preview/export and final `ui_draw_*` timing entries. Capture it after a clean Triangle exit; launch resets the session log.
+- Exit while idle after a cache hit and after a canceled import. Relaunch, open another app, and confirm shutdown is clean and valid caches remain available.

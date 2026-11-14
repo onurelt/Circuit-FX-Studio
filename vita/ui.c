@@ -160,7 +160,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.6", 70);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.7", 70);
   txt(733, 13, &small, MUTED, "OFFLINE  /  WAV + MP3", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];

@@ -10,6 +10,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <psp2/rtc.h>
 #include <psp2/touch.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -20,6 +21,7 @@
 #define ROOT "ux0:data/CircuitFX"
 #define PREVIEW ROOT "/preview.wav"
 #define MAX_SONGS 512
+#define CACHE_LIMIT_BYTES (512LL * 1024LL * 1024LL)
 static View view;
 static char songs[MAX_SONGS][256], paths[2][512];
 static char cache_paths[2][512];
@@ -30,7 +32,10 @@ static SceUID blocks[2];
 static int timeline_dirty = 1;
 static uint64_t timeline_due;
 static int touch_x, touch_y, touch_down;
+static int screen_dirty = 1;
+static uint64_t draw_total_us, draw_max_us, draw_count;
 static int progress(uint32_t done, uint32_t total);
+static void logline(const char *s);
 static int has_suffix(const char *name, const char *suffix) {
   size_t n = strlen(name), s = strlen(suffix);
   return n >= s && !strcasecmp(name + n - s, suffix);
@@ -41,22 +46,103 @@ static uint32_t filename_hash(const char *name) {
     hash = (hash ^ (unsigned char)*name++) * 16777619u;
   return hash;
 }
-static void clean_mp3_cache(void) {
+static uint32_t track_signature(const char *path, SceIoStat *st) {
+  if (!path || sceIoGetstat(path, st) < 0 || SCE_S_ISDIR(st->st_mode))
+    return 0;
+  uint32_t h = filename_hash(path);
+  const unsigned char *p = (const unsigned char *)&st->st_size;
+  for (size_t i = 0; i < sizeof(st->st_size); ++i)
+    h = (h ^ p[i]) * 16777619u;
+  const unsigned short stamp[] = {st->st_mtime.year, st->st_mtime.month,
+                                  st->st_mtime.day,  st->st_mtime.hour,
+                                  st->st_mtime.minute, st->st_mtime.second};
+  for (size_t i = 0; i < sizeof(stamp) / sizeof(stamp[0]); ++i) {
+    h = (h ^ (unsigned char)stamp[i]) * 16777619u;
+    h = (h ^ (unsigned char)(stamp[i] >> 8)) * 16777619u;
+  }
+  return h ? h : 1;
+}
+static int older_date(const SceDateTime *a, const SceDateTime *b) {
+  const unsigned short av[] = {a->year, a->month, a->day, a->hour,
+                               a->minute, a->second};
+  const unsigned short bv[] = {b->year, b->month, b->day, b->hour,
+                               b->minute, b->second};
+  for (size_t i = 0; i < sizeof(av) / sizeof(av[0]); ++i) {
+    if (av[i] != bv[i])
+      return av[i] < bv[i];
+  }
+  return 0;
+}
+static const SceDateTime *cache_age(const SceIoStat *st) {
+  return st->st_atime.year ? &st->st_atime : &st->st_mtime;
+}
+static int cache_protected(const char *path) {
+  for (int i = 0; i < 2; ++i)
+    if (cache_paths[i][0] && !strcmp(cache_paths[i], path))
+      return 1;
+  return 0;
+}
+/* Keep useful conversions across launches. Partial files are never reusable;
+ * when the cache exceeds 512 MiB, evict the least recently opened item first. */
+static void prune_cache(void) {
   int d = sceIoDopen(ROOT "/cache");
   if (d < 0)
     return;
-  SceIoDirent entry;
-  memset(&entry, 0, sizeof(entry));
-  while (sceIoDread(d, &entry) > 0) {
-    if (strcmp(entry.d_name, ".") && strcmp(entry.d_name, "..") &&
-        !SCE_S_ISDIR(entry.d_stat.st_mode)) {
-      char path[512];
-      snprintf(path, sizeof(path), ROOT "/cache/%s", entry.d_name);
-      remove(path);
+  int64_t total = 0;
+  SceIoDirent e;
+  memset(&e, 0, sizeof(e));
+  while (sceIoDread(d, &e) > 0) {
+    if (!SCE_S_ISDIR(e.d_stat.st_mode) && strcmp(e.d_name, ".") &&
+        strcmp(e.d_name, "..")) {
+      char p[512];
+      snprintf(p, sizeof(p), ROOT "/cache/%s", e.d_name);
+      size_t n = strlen(p);
+      if (n >= 5 && !strcmp(p + n - 5, ".part"))
+        remove(p);
+      else if (e.d_stat.st_size > 0)
+        total += e.d_stat.st_size;
     }
-    memset(&entry, 0, sizeof(entry));
+    memset(&e, 0, sizeof(e));
   }
   sceIoDclose(d);
+  while (total > CACHE_LIMIT_BYTES) {
+    d = sceIoDopen(ROOT "/cache");
+    if (d < 0)
+      break;
+    char oldest[512] = {0};
+    SceDateTime oldest_at = {0};
+    int have_oldest = 0;
+    int64_t oldest_size = 0;
+    memset(&e, 0, sizeof(e));
+    while (sceIoDread(d, &e) > 0) {
+      if (!SCE_S_ISDIR(e.d_stat.st_mode) && strcmp(e.d_name, ".") &&
+          strcmp(e.d_name, "..")) {
+        char p[512];
+        snprintf(p, sizeof(p), ROOT "/cache/%s", e.d_name);
+        const SceDateTime *age = cache_age(&e.d_stat);
+        if (!cache_protected(p) && e.d_stat.st_size > 0 &&
+            (!have_oldest || older_date(age, &oldest_at))) {
+          snprintf(oldest, sizeof(oldest), "%s", p);
+          oldest_at = *age;
+          oldest_size = e.d_stat.st_size;
+          have_oldest = 1;
+        }
+      }
+      memset(&e, 0, sizeof(e));
+    }
+    sceIoDclose(d);
+    if (!have_oldest || remove(oldest))
+      break;
+    total -= oldest_size;
+  }
+}
+static void cache_touch(const char *path) {
+  SceIoStat st;
+  if (sceIoGetstat(path, &st) >= 0 &&
+      sceRtcGetCurrentClockLocalTime(&st.st_atime) >= 0) {
+    st.st_mtime = st.st_atime;
+    sceIoChstat(path, &st, SCE_CST_AT | SCE_CST_MT);
+  }
 }
 static int touch_press(void) {
   SceTouchData t = {0};
@@ -70,18 +156,12 @@ static int touch_press(void) {
   return pressed;
 }
 static void refresh_timeline(void) {
+  uint64_t started = sceKernelGetProcessTimeWide();
   memset(view.timeline, 0, sizeof(view.timeline));
   double pre = ui_timeline_pre(&view), span = ui_timeline_span(&view);
   for (int d = 0; d < 2; d++) {
-    if (!view.songs[d])
+    if (!view.songs[d] || view.lengths[d] <= 0)
       continue;
-    uint32_t frames, offset;
-    if (inspect_wav(paths[d], &frames, &offset))
-      continue;
-    FILE *f = fopen(paths[d], "rb");
-    if (!f)
-      continue;
-    int16_t pcm[128];
     for (int x = 0; x < TIMELINE_BINS; x++) {
       double rel = span * x / TIMELINE_BINS - pre;
       if ((d == 0 && rel >= view.settings.duration) || (d == 1 && rel < 0))
@@ -89,23 +169,21 @@ static void refresh_timeline(void) {
       double t = (d ? view.settings.start_b : view.settings.start_a) + rel;
       if (t < 0 || t >= view.lengths[d])
         continue;
-      uint32_t at = (uint32_t)(t * 44100), n = frames - at;
-      if (n > 64)
-        n = 64;
-      if (fseek(f, offset + (long)at * 4, SEEK_SET))
-        break;
-      size_t got = fread(pcm, 2, n * 2, f);
-      int peak = 0;
-      for (size_t i = 0; i < got; i++) {
-        int a = abs((int)pcm[i]);
-        if (a > peak)
-          peak = a;
-      }
-      view.timeline[d][x] = peak;
+      int bin = (int)(t / view.lengths[d] * 440.0);
+      if (bin < 0)
+        bin = 0;
+      if (bin > 439)
+        bin = 439;
+      view.timeline[d][x] = view.peaks[d][bin];
     }
-    fclose(f);
   }
   timeline_dirty = 0;
+  /* Timeline generation now uses the in-memory waveform envelope; it never
+   * seeks across the tracks for every cue, tempo, or effect adjustment. */
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING timeline_ms=%llu",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - started) / 1000);
+  logline(timing);
 }
 
 static void logline(const char *s) {
@@ -116,13 +194,20 @@ static void logline(const char *s) {
   }
 }
 static void show(void) {
+  uint64_t started = sceKernelGetProcessTimeWide();
   ui_draw(buffers[back], &view);
+  uint64_t render_us = sceKernelGetProcessTimeWide() - started;
   SceDisplayFrameBuf frame = {sizeof(frame), buffers[back],
                               960,           SCE_DISPLAY_PIXELFORMAT_A8B8G8R8,
                               960,           544};
   sceDisplaySetFrameBuf(&frame, SCE_DISPLAY_SETBUF_NEXTFRAME);
   sceDisplayWaitVblankStart();
   back ^= 1;
+  screen_dirty = 0;
+  draw_total_us += render_us;
+  draw_count++;
+  if (render_us > draw_max_us)
+    draw_max_us = render_us;
 }
 static uint32_t buttons(void) {
   SceCtrlData p = {0};
@@ -145,15 +230,18 @@ static uint32_t buttons(void) {
 static void message(const char *s) {
   snprintf(view.status, sizeof(view.status), "%s", s);
   logline(s);
+  screen_dirty = 1;
 }
 static void invalidate(void) {
   ready = view.ready = 0;
   timeline_dirty = 1;
   timeline_due = sceKernelGetProcessTimeWide() + 200000;
   remove(PREVIEW);
+  screen_dirty = 1;
 }
 static int compare(const void *a, const void *b) { return strcasecmp(a, b); }
 static void scan(void) {
+  uint64_t started = sceKernelGetProcessTimeWide();
   count = 0;
   int d = sceIoDopen(ROOT "/music");
   if (d < 0) {
@@ -170,12 +258,53 @@ static void scan(void) {
   }
   sceIoDclose(d);
   qsort(songs, count, 256, compare);
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING scan_ms=%llu files=%d",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - started) / 1000,
+           count);
+  logline(timing);
 }
 static void load_peaks(int deck, uint32_t frames, uint32_t offset) {
+  uint64_t started = sceKernelGetProcessTimeWide();
+  SceIoStat st;
+  uint32_t signature = track_signature(paths[deck], &st);
+  char peak_path[512], peak_part[512];
+  snprintf(peak_path, sizeof(peak_path), ROOT "/cache/wave-%08x.bin",
+           signature);
+  snprintf(peak_part, sizeof(peak_part), ROOT "/cache/wave-%08x.part",
+           signature);
+  /* The same track can occupy both decks. Share its already-computed envelope. */
+  int other = deck ^ 1;
+  if (paths[other][0] && !strcmp(paths[other], paths[deck])) {
+    memcpy(view.peaks[deck], view.peaks[other], sizeof(view.peaks[deck]));
+    return;
+  }
+  FILE *cached = fopen(peak_path, "rb");
+  if (cached) {
+    size_t got = fread(view.peaks[deck], 1, sizeof(view.peaks[deck]), cached);
+    int extra = fgetc(cached);
+    fclose(cached);
+    if (got == sizeof(view.peaks[deck]) && extra == EOF) {
+      cache_touch(peak_path);
+      char timing[128];
+      snprintf(timing, sizeof(timing), "TIMING waveform_cache_hit_ms=%llu",
+               (unsigned long long)(sceKernelGetProcessTimeWide() - started) /
+                   1000);
+      logline(timing);
+      return;
+    }
+    remove(peak_path);
+  }
   FILE *f = fopen(paths[deck], "rb");
   memset(view.peaks[deck], 0, sizeof(view.peaks[deck]));
-  if (!f)
+  if (!f) {
+    char timing[128];
+    snprintf(timing, sizeof(timing), "TIMING waveform_ms=%llu result=open_failed",
+             (unsigned long long)(sceKernelGetProcessTimeWide() - started) /
+                 1000);
+    logline(timing);
     return;
+  }
   int16_t samples[128];
   for (int x = 0; x < 440; x++) {
     uint32_t at = (uint64_t)x * frames / 440;
@@ -194,16 +323,117 @@ static void load_peaks(int deck, uint32_t frames, uint32_t offset) {
     view.peaks[deck][x] = peak;
   }
   fclose(f);
+  FILE *out = fopen(peak_part, "wb");
+  if (out) {
+    size_t written = fwrite(view.peaks[deck], 1, sizeof(view.peaks[deck]), out);
+    int close_error = fclose(out);
+    if (written == sizeof(view.peaks[deck]) && !close_error)
+      rename(peak_part, peak_path);
+    else
+      remove(peak_part);
+  }
+  cache_touch(peak_path);
+  prune_cache();
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING waveform_ms=%llu bins=440",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - started) / 1000);
+  logline(timing);
+}
+static struct {
+  atomic_int cancel, done, result, too_large;
+  atomic_uint frames, total;
+  char input[512], output[512];
+} mp3_job;
+static int mp3_worker_progress(uint32_t done, uint32_t total) {
+  atomic_store(&mp3_job.frames, done);
+  atomic_store(&mp3_job.total, total);
+  if ((uint64_t)total * 4 + 44 > CACHE_LIMIT_BYTES) {
+    atomic_store(&mp3_job.too_large, 1);
+    return 1;
+  }
+  return atomic_load(&mp3_job.cancel);
+}
+static int mp3_worker(SceSize args, void *argp) {
+  (void)args;
+  (void)argp;
+  int rc = mp3_import_to_wav(mp3_job.input, mp3_job.output,
+                             mp3_worker_progress);
+  atomic_store(&mp3_job.result, rc);
+  atomic_store(&mp3_job.done, 1);
+  return 0;
+}
+static int decode_mp3_async(const char *input, const char *output) {
+  uint64_t started = sceKernelGetProcessTimeWide();
+  snprintf(mp3_job.input, sizeof(mp3_job.input), "%s", input);
+  snprintf(mp3_job.output, sizeof(mp3_job.output), "%s", output);
+  atomic_store(&mp3_job.cancel, 0);
+  atomic_store(&mp3_job.done, 0);
+  atomic_store(&mp3_job.result, -1);
+  atomic_store(&mp3_job.too_large, 0);
+  atomic_store(&mp3_job.frames, 0);
+  atomic_store(&mp3_job.total, 0);
+  SceUID thread = sceKernelCreateThread("CircuitFX MP3", mp3_worker,
+                                        0x10000100, 128 * 1024, 0, 0, NULL);
+  if (thread < 0)
+    return -1;
+  if (sceKernelStartThread(thread, 0, NULL) < 0) {
+    sceKernelDeleteThread(thread);
+    return -1;
+  }
+  view.progress = 0;
+  screen_dirty = 1;
+  show();
+  int last_percent = -1;
+  uint64_t power_tick = sceKernelGetProcessTimeWide() + 500000;
+  while (!atomic_load(&mp3_job.done)) {
+    uint32_t hit = buttons();
+    int tapped = touch_press();
+    if ((hit & SCE_CTRL_CIRCLE) ||
+        (tapped && touch_x >= 192 && touch_x < 768 && touch_y >= 185 &&
+         touch_y < 349))
+      atomic_store(&mp3_job.cancel, 1);
+    unsigned total = atomic_load(&mp3_job.total);
+    unsigned done = atomic_load(&mp3_job.frames);
+    int percent = total ? (int)((uint64_t)done * 100 / total) : 0;
+    if (percent > 100)
+      percent = 100;
+    if (percent != last_percent) {
+      view.progress = percent;
+      show();
+      last_percent = percent;
+    }
+    uint64_t now = sceKernelGetProcessTimeWide();
+    if (now >= power_tick) {
+      sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+      power_tick = now + 500000;
+    }
+    sceKernelDelayThread(10000);
+  }
+  sceKernelWaitThreadEnd(thread, NULL, NULL);
+  sceKernelDeleteThread(thread);
+  view.progress = -1;
+  int rc = atomic_load(&mp3_job.result);
+  screen_dirty = 1;
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING mp3_import_ms=%llu result=%d",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - started) / 1000,
+           rc);
+  logline(timing);
+  return rc;
 }
 static void browse(int deck) {
   view.browser = 1;
   view.browser_pos = 0;
   view.browser_count = count;
+  int drawn_pos = -1;
   while (view.browser) {
     view.first = view.browser_pos / 10 * 10;
     for (int i = 0; i < 10; i++)
       view.entries[i] = view.first + i < count ? songs[view.first + i] : NULL;
-    show();
+    if (drawn_pos != view.browser_pos) {
+      show();
+      drawn_pos = view.browser_pos;
+    }
     uint32_t hit = buttons();
     if (touch_press()) {
       if (touch_x >= 82 && touch_x < 878 && touch_y >= 132 && touch_y < 442) {
@@ -230,52 +460,66 @@ static void browse(int deck) {
       view.browser_pos = (view.browser_pos + 1) % count;
     if (hit & SCE_CTRL_CROSS) {
       char path[512], source_path[512], cache_path[512], part_path[512];
+      uint64_t selection_started = sceKernelGetProcessTimeWide();
       snprintf(path, sizeof(path), ROOT "/music/%s", songs[view.browser_pos]);
       int is_mp3 = has_suffix(path, ".mp3");
       int use_cached_mp3 = 0;
       if (is_mp3) {
-        unsigned deck_id = (unsigned)deck + 1;
-        uint32_t hash = filename_hash(path);
+        SceIoStat input_stat;
+        uint32_t hash = track_signature(path, &input_stat);
+        if (!hash) {
+          message("Cannot read MP3 file information.");
+          break;
+        }
         snprintf(cache_path, sizeof(cache_path),
-                 ROOT "/cache/track%u-%08x.wav", deck_id, hash);
+                 ROOT "/cache/mp3-%08x.wav", hash);
         snprintf(part_path, sizeof(part_path),
-                 ROOT "/cache/track%u-%08x.part", deck_id, hash);
+                 ROOT "/cache/mp3-%08x.part", hash);
         SceIoStat cached;
-        use_cached_mp3 = !strcmp(cache_paths[deck], cache_path) &&
-                         sceIoGetstat(cache_path, &cached) >= 0;
+        uint32_t cached_frames, cached_offset;
+        use_cached_mp3 = sceIoGetstat(cache_path, &cached) >= 0 &&
+                         !inspect_wav(cache_path, &cached_frames,
+                                      &cached_offset);
+        if (sceIoGetstat(cache_path, &cached) >= 0 && !use_cached_mp3)
+          remove(cache_path);
         if (!use_cached_mp3) {
           remove(part_path);
-          message("Decoding MP3 to a temporary WAV...");
-          view.progress = 0;
-          show();
-          int decode_result = mp3_import_to_wav(path, part_path, progress);
-          view.progress = -1;
+          message("Decoding MP3. Circle or tap the dialog to cancel.");
+          int decode_result = decode_mp3_async(path, part_path);
           if (decode_result) {
             remove(part_path);
-            message(mp3_import_error);
+            message(atomic_load(&mp3_job.too_large)
+                        ? "Decoded song exceeds the 512 MB cache limit."
+                        : mp3_import_error[0]
+                              ? mp3_import_error
+                              : "Could not start MP3 decoder.");
             break;
           }
-          remove(cache_path);
           if (rename(part_path, cache_path)) {
             remove(part_path);
             message("Could not keep the decoded song. Check storage space.");
             break;
           }
-        }
+          if (sceIoGetstat(cache_path, &cached) >= 0 &&
+              cached.st_size > CACHE_LIMIT_BYTES) {
+            remove(cache_path);
+            message("Decoded song exceeds the 512 MB cache limit.");
+            break;
+          }
+        } else
+          logline("TIMING mp3_cache_hit=1");
+        cache_touch(cache_path);
         snprintf(source_path, sizeof(source_path), "%s", cache_path);
       } else {
         snprintf(source_path, sizeof(source_path), "%s", path);
       }
       uint32_t frames, offset;
       if (inspect_wav(source_path, &frames, &offset)) {
-        if (is_mp3 && !use_cached_mp3)
+        if (is_mp3)
           remove(cache_path);
         message(render_error);
         break;
       }
-      if (cache_paths[deck][0] &&
-          (!is_mp3 || strcmp(cache_paths[deck], cache_path)))
-        remove(cache_paths[deck]);
       if (is_mp3)
         snprintf(cache_paths[deck], sizeof(cache_paths[deck]), "%s", cache_path);
       else
@@ -290,11 +534,21 @@ static void browse(int deck) {
       else
         view.settings.start_b = 0;
       load_peaks(deck, frames, offset);
+      prune_cache();
+      char timing[128];
+      snprintf(timing, sizeof(timing), "TIMING song_select_ms=%llu format=%s",
+               (unsigned long long)(sceKernelGetProcessTimeWide() -
+                                    selection_started) /
+                   1000,
+               is_mp3 ? "MP3" : "WAV");
+      logline(timing);
       message("Song loaded. Set cue times and preview.");
       break;
     }
+    sceKernelDelayThread(2000);
   }
   view.browser = 0;
+  screen_dirty = 1;
 }
 static int progress(uint32_t done, uint32_t total) {
   static int last = -1;
@@ -454,7 +708,14 @@ static void preview(void) {
   message("Rendering preview...");
   view.progress = 0;
   show();
+  uint64_t render_started = sceKernelGetProcessTimeWide();
   int rc = render_mix(paths[0], paths[1], PREVIEW, &view.settings, 1, progress);
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING preview_render_ms=%llu result=%d",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
+               1000,
+           rc);
+  logline(timing);
   view.progress = -1;
   if (rc) {
     message(render_error);
@@ -473,10 +734,17 @@ static void export_mix(void) {
   }
   view.confirm = 1;
   int yes = 0;
+  int redraw = 1;
   while (1) {
-    show();
+    if (redraw) {
+      show();
+      redraw = 0;
+    }
     unsigned h = buttons();
-    if (touch_press() && touch_y >= 312 && touch_y < 354) {
+    int tapped = touch_press();
+    if (h || tapped)
+      redraw = 1;
+    if (tapped && touch_y >= 312 && touch_y < 354) {
       if (touch_x >= 201 && touch_x < 458)
         h |= SCE_CTRL_CIRCLE;
       if (touch_x >= 486 && touch_x < 759)
@@ -488,8 +756,10 @@ static void export_mix(void) {
       yes = 1;
       break;
     }
+    sceKernelDelayThread(4000);
   }
   view.confirm = 0;
+  screen_dirty = 1;
   if (!yes)
     return;
   char out[512];
@@ -509,7 +779,14 @@ static void export_mix(void) {
   message("Exporting full mix...");
   view.progress = 0;
   show();
+  uint64_t render_started = sceKernelGetProcessTimeWide();
   int rc = render_mix(paths[0], paths[1], out, &view.settings, 0, progress);
+  char timing[128];
+  snprintf(timing, sizeof(timing), "TIMING export_render_ms=%llu result=%d",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
+               1000,
+           rc);
+  logline(timing);
   view.progress = -1;
   if (rc)
     message(render_error);
@@ -522,12 +799,19 @@ static void export_mix(void) {
 static void browse_presets(void) {
   view.preset_browser = 1;
   view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 65;
+  int redraw = 1;
   while (1) {
-    show();
+    if (redraw) {
+      show();
+      redraw = 0;
+    }
     unsigned h = buttons();
+    int tapped = touch_press();
+    if (h || tapped)
+      redraw = 1;
     int id = view.selected_preset, bank = (id - 1) / 16, local = (id - 1) % 16;
     int sample_setting_changed = 0;
-    if (touch_press()) {
+    if (tapped) {
       if (touch_y >= 115 && touch_y < 172 && touch_x >= 34 && touch_x < 934) {
         int row = (touch_y - 115) / 29;
         int b = row * 4 + (touch_x - 34) / 225;
@@ -595,7 +879,7 @@ static void browse_presets(void) {
       }
       snprintf(path, sizeof(path), "app0:sfx/%02d.wav", selected.sample_id);
       if (!selected.sample_id || play_file(path, 1))
-        message("Cannot play bundled WAV. Reinstall Beta 1.6.");
+        message("Cannot play bundled WAV. Reinstall Beta 1.7.");
       else
         message("WAV audition finished. Settings apply to audition and mix.");
     }
@@ -627,8 +911,10 @@ static void browse_presets(void) {
       message(status);
       break;
     }
+    sceKernelDelayThread(4000);
   }
   view.preset_browser = 0;
+  screen_dirty = 1;
 }
 static void edit_time(int row) {
   double extra = row == 13 ? view.settings.bpm : view.settings.intensity * 100;
@@ -640,12 +926,19 @@ static void edit_time(int row) {
   snprintf(view.entry, sizeof(view.entry), "%.3f", *value);
   view.edit_error[0] = 0;
   int fresh = 1;
+  int redraw = 1;
   while (view.editing) {
-    show();
+    if (redraw) {
+      show();
+      redraw = 0;
+    }
     unsigned h = buttons();
     int key = -1;
-    if (touch_press())
+    int tapped = touch_press();
+    if (tapped)
       key = ui_key_test(touch_x, touch_y);
+    if (h || tapped)
+      redraw = 1;
     if ((h & SCE_CTRL_CIRCLE) || key == 12)
       break;
     if (key >= 0 && key < 12) {
@@ -698,8 +991,10 @@ static void edit_time(int row) {
                         : "Cue updated. Preview to hear your transition.");
       break;
     }
+    sceKernelDelayThread(4000);
   }
   view.editing = 0;
+  screen_dirty = 1;
 }
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
@@ -707,11 +1002,11 @@ int main(void) {
   sceIoMkdir(ROOT "/music", 0777);
   sceIoMkdir(ROOT "/exports", 0777);
   sceIoMkdir(ROOT "/cache", 0777);
-  clean_mp3_cache();
+  prune_cache();
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.6 / 01.06\n");
+    fprintf(log, "Circuit FX Vita Beta 1.7 / 01.07\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {
@@ -740,11 +1035,14 @@ int main(void) {
   scan();
   message("Choose two songs. WAV or MP3. Triangle: exit safely.");
   while (1) {
-    if (timeline_dirty && sceKernelGetProcessTimeWide() >= timeline_due)
+    if (timeline_dirty && sceKernelGetProcessTimeWide() >= timeline_due) {
       refresh_timeline();
-    show();
+      screen_dirty = 1;
+    }
     unsigned hit = buttons();
     int tap = touch_press() ? ui_hit_test(touch_x, touch_y) : -1;
+    if (hit || tap >= 0)
+      screen_dirty = 1;
     if (tap >= 0) {
       view.row = tap;
       hit |= SCE_CTRL_CROSS;
@@ -802,11 +1100,20 @@ int main(void) {
       } else
         message("Generate a preview first.");
     }
+    if (screen_dirty)
+      show();
+    sceKernelDelayThread(2000);
   }
   remove(PREVIEW);
-  for (int i = 0; i < 2; i++)
-    if (cache_paths[i][0])
-      remove(cache_paths[i]);
+  char summary[160];
+  snprintf(summary, sizeof(summary),
+           "TIMING ui_draw_calls=%llu ui_draw_avg_us=%llu ui_draw_max_us=%llu",
+           (unsigned long long)draw_count,
+           (unsigned long long)(draw_count ? draw_total_us / draw_count
+                                           : 0),
+           (unsigned long long)draw_max_us);
+  logline(summary);
+  prune_cache();
   logline("Clean exit");
   sceKernelExitProcess(0);
   return 0;

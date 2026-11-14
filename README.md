@@ -2,12 +2,20 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.7 — faster browsing and persistent audio cache (01.07)
+
+Song browsing and MP3 conversion no longer redraw the whole interface continuously. The browser redraws on navigation, and the main dashboard sleeps between input events. Cue and effect changes rebuild the timeline from the in-memory waveform envelope instead of re-opening and seeking through both song files. Per-track waveform envelopes are cached too.
+
+MP3 conversion runs on a worker thread. The screen continues polling physical controls and touch; Circle or tapping the progress dialog cancels. A successful conversion is reused across launches and when the same MP3 is loaded on both decks. Cache entries are keyed by path, size and modification time, and the app evicts least-recently-opened reusable entries above **512 MiB**. Selected songs stay pinned while loaded, so active files can temporarily push total storage above that target. Cache files are kept on clean exit; stale `.part` files are removed on launch.
+
+`session.log` includes `TIMING` entries for scans, song selection, MP3 import/cache hits, waveform generation/cache hits, timeline regeneration, preview/export rendering, and the number and CPU time of screen draws. Those measurements are Vita-specific and need to be collected on hardware.
+
 ## Beta 1.6 — MP3 song import (01.06)
 
 The song browser now lists `.mp3` and `.wav` files. MP3s are decoded to temporary 44.1 kHz, stereo, 16-bit PCM WAVs when selected, then use the same cue, preview, effects and WAV-export pipeline as WAV songs. Mono and stereo MP3s from 8 to 48 kHz are resampled. MP3 originals are never modified.
 
 - Copy songs into `ux0:data/CircuitFX/music/`, then press SELECT to refresh.
-- The first selection of an MP3 shows conversion progress; Circle cancels it. Decoded files are cached for the two loaded decks and removed when the app exits or on its next launch after an unexpected close.
+- In Beta 1.6, the first selection of an MP3 showed conversion progress; Circle canceled it. Beta 1.7 replaces that temporary behavior with a persistent bounded cache.
 - Compressed MP3s can be at most 64 MB. The temporary decoded WAV uses about **10.1 MiB per minute per track**, so leave room for both caches and the exported mix. Conversion stops cleanly if storage runs out.
 - The decoder supports ordinary MPEG Layer III files. Damaged or unsupported inputs return an error without changing the original song.
 
@@ -95,7 +103,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.6` artifact from a successful run. The workflow pins the SDK archive and SHA-256. minimp3 is compiled into the app; it adds no runtime plugin.
+GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.7` artifact from a successful run. The workflow pins the SDK archive and SHA-256. minimp3 is compiled into the app; it adds no runtime plugin.
 
 Local Vita build:
 
