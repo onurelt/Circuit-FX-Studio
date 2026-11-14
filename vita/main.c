@@ -1058,7 +1058,8 @@ static void preview(void) {
       if (view.bpm_manual[d])
         grid.phase_seconds=(float)fmod(*cue,60./grid.bpm);
       double aligned=beat_nearest(*cue,&grid);
-      double limit=view.lengths[d]-view.settings.duration;
+      double consumed=view.settings.duration*(d?ratio:1);
+      double limit=view.lengths[d]-consumed;
       if (limit<0) {message("Transition exceeds a song.");return;}
       while (aligned>limit && aligned>=60./grid.bpm)
         aligned-=60./grid.bpm;

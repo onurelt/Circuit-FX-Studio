@@ -73,11 +73,14 @@ void ui_draw(uint32_t *pixels, const View *v) {
   rect(10,50,940,265,RGB(14,25,39));
   double span=v->wave_window>0?v->wave_window:45;
   double pan=v->wave_window>0?v->wave_pan:-22.5;
+  double tempo_ratio=v->auto_beatmatch && v->track_bpm[0]>0 &&
+                     v->track_bpm[1]>0 ?
+                     v->track_bpm[0]/v->track_bpm[1] : 1;
   int cue_x[2],end_x[2];
   for (int d=0;d<2;d++) {
     double cue=d?v->settings.start_b:v->settings.start_a;
     cue_x[d]=54+(int)((cue-v->wave_origin[d]-pan)*880/span);
-    end_x[d]=cue_x[d]+(int)(v->settings.duration*880/span);
+    end_x[d]=cue_x[d]+(int)(v->settings.duration*(d?tempo_ratio:1)*880/span);
     if (cue_x[d]<934 && end_x[d]>54) {
       int left=cue_x[d]<54?54:cue_x[d],right=end_x[d]>934?934:end_x[d];
       if (right>left) rect(left,d?195:79,right-left,115,RGB(42,30,64));
