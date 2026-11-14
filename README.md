@@ -1,6 +1,16 @@
-# Circuit FX Studio — native PS Vita Beta 1
+# Circuit FX Studio — native PS Vita Beta 2.0
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
+
+## Beta 2.0 — automatic beatmatching (02.00)
+
+Both song bars show detected BPM from the cached, complete 8,192-bin waveform envelope. Tap a displayed BPM to enter a manual 70–180 BPM value; an asterisk marks an override. The **Auto Beatmatch** switch is on the Transitions tab and starts ON. If a song has no stable beat, enter its BPM manually or turn Auto off. The automatic detector estimates a regular pulse; syncopation, silence, tempo changes and half/double-time rhythms may require a manual value and cue adjustment.
+
+On Preview, Auto snaps each visible cue to its song's nearest estimated beat, matches Track B's tempo to A within 25%, and sets effect timing to A's BPM. Preset durations use A's detected or manual tempo. If you override BPM, the current cue anchors its beat grid. The adjusted cues remain visible and editable. With Auto off, original tempo and existing effect BPM controls behave as before.
+
+The pitch-preserving stereo time stretch is prepared **offline** on a cancellable worker, written to a reusable cache, then fed into the existing effect mixer. Preview and full WAV export use the same prepared audio and settings; playback does no live stretching. MP3s still use the existing decoded PCM cache for sample-accurate mixing. Beat analysis and matched audio persist across launches and share the 512 MiB size-limited cache. Each 44.1 kHz stereo 16-bit prepared song takes about 10.1 MiB per minute. `session.log` records beat cache hits and preparation time. Large tempo changes are refused instead of silently altering pitch; time stretching can still produce audible artifacts on difficult material, so listen to the preview before exporting.
+
+Host tests check BPM detection, stretch duration, preserved test-tone frequency, cancellation and preview/export identity. The VPK compiles and passes structural validation. Audio quality, responsiveness, CPU time and stability at stock clocks **still require a real Vita test**; follow the [hardware checklist](HARDWARE_TESTING.md) and share its `session.log` to compare before and after.
 
 ## Beta 1.9 — waveform-first interface (01.09)
 
@@ -84,12 +94,12 @@ The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebui
 
 ## Install
 
-1. Copy `CircuitFX-Beta1.vpk` to your homebrew-enabled Vita and install with VitaShell.
+1. Copy `CircuitFX-Beta2.0.vpk` to your homebrew-enabled Vita and install with VitaShell.
 2. Launch once to create the folders, then exit with Triangle.
 3. Put songs in `ux0:data/CircuitFX/music/` using VitaShell USB or FTP.
 4. Launch Circuit FX Studio. Select Track A and Track B.
 
-**Input:** Up to 512 `.wav` or `.mp3` files directly inside the music folder. WAV requires 44,100 Hz, stereo, signed 16-bit PCM. MP3 is decoded on selection and resampled to that format; mono/stereo 8–48 kHz files up to 64 MB are supported. Mono, 48 kHz, float and 24-bit WAV remain unsupported. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
+**Input:** Up to 512 `.wav` or `.mp3` files directly inside the music folder. WAV requires 44,100 Hz, stereo, signed 16-bit PCM. MP3 length and waveform are scanned on selection; preview decodes it into a reusable PCM cache and resamples to that format. Mono/stereo 8–48 kHz MP3s up to 64 MB are supported. Mono, 48 kHz, float and 24-bit WAV remain unsupported. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
 
 ## Make a mix
 
@@ -121,7 +131,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.8` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
+GitHub Actions runs host audio, beatmatch and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.0` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
 
 Local Vita build:
 
@@ -130,7 +140,7 @@ export VITASDK=/path/to/vitasdk
 export PATH="$VITASDK/bin:$PATH"
 cmake -S . -B build
 cmake --build build --parallel 2
-python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
+python3 tests/check_vpk.py build/CircuitFX-Beta2.0.vpk
 ```
 
 Host tests:
@@ -138,12 +148,14 @@ Host tests:
 ```sh
 gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
 python3 tests/test_audio.py
+gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
+python3 tests/test_beatmatch.py
 gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
 python3 tests/test_mp3.py
 ```
 
 The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
 
-**Not included:** automatic tempo/beat matching, BPM detection, user-saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
+**Still not included:** user-saved presets, album artwork and background/locked-screen playback. The waveform shows source peaks and transition boundaries, not a post-effect waveform. Auto timing estimates beat phase from the envelope and does not detect musical downbeats or key.
 
 This is a compiled, host-tested **hardware-test beta**, not a claim of verified playback on a physical Vita. See [HARDWARE_TESTING.md](HARDWARE_TESTING.md). Diagnostic messages are recorded in `ux0:data/CircuitFX/session.log` (reset on launch).

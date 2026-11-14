@@ -11,9 +11,18 @@ int main(void) {
       {860,338,11},{100,385,110},{430,385,111},{760,385,112}};
   for (size_t i=0;i<sizeof(main_controls)/sizeof(main_controls[0]);i++)
     assert(ui_hit_test_for_tab(&v,main_controls[i][0],main_controls[i][1])==main_controls[i][2]);
+  v.songs[0]="Track A";
+  v.songs[1]="Track B";
+  assert(ui_hit_test_for_tab(&v,400,35)==160);
+  assert(ui_hit_test_for_tab(&v,890,35)==161);
+  assert(ui_hit_test_for_tab(&v,760,520)==162);
+  v.auto_beatmatch=1;
+  assert(ui_hit_test_for_tab(&v,760,520)==162);
   for (int i=0;i<5;i++)
     assert(ui_hit_test_for_tab(&v,20+188*i,450)==120+i);
   v.tab=1;
+  assert(ui_hit_test_for_tab(&v,730,517)==-1);
+  v.auto_beatmatch=0;
   v.settings.preset_id=65;
   for (int i=0;i<5;i++)
     assert(ui_hit_test_for_tab(&v,20+188*i,450)==120+i);
@@ -21,6 +30,9 @@ int main(void) {
                            {730,517,153},{890,517,154}};
   for (int i=0;i<5;i++) assert(ui_hit_test_for_tab(&v,effects[i][0],effects[i][1])==effects[i][2]);
   v.tab=2;
+  v.auto_beatmatch=1;
+  assert(ui_hit_test_for_tab(&v,580,520)==-1);
+  v.auto_beatmatch=0;
   for (int i=0;i<8;i++) assert(ui_hit_test_for_tab(&v,20+116*i,430)==130+i);
   for (int i=0;i<5;i++) assert(ui_hit_test_for_tab(&v,20+188*i,470)==120+i);
   assert(ui_hit_test_for_tab(&v,30,520)==140);
@@ -77,6 +89,11 @@ int main(void) {
   for (int mode = 4; mode <= 5; mode++) {
     v.editing = mode;
     ui_draw(memory + 1, &v);
+  }
+  for (int mode = 6; mode <= 7; mode++) {
+    v.editing = mode;
+    ui_draw(memory + 1, &v);
+    assert(memory[0] == 0x12345678 && memory[960 * 544 + 1] == 0x87654321);
   }
   free(memory);
   puts("PASS: three-tab touch targets, keypad keys, waveform bounds and modal render "

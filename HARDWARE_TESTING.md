@@ -2,6 +2,14 @@
 
 No physical Vita was available during development. Host tests exercise the same C audio renderer linked into the native VPK. Compilation and package checks do not verify hardware audio, shell behavior, suspend/resume or storage throughput.
 
+## Version 02.00 beatmatch checks
+
+- Install over 01.09 at normal clocks. Load two dance tracks with clearly different steady tempos (for example, 120 and 128 BPM). Confirm the displayed BPM for each deck, tap each BPM to set a manual value, and check the asterisk, edit cancel and reselect behavior. With Auto off, original speed and effect BPM controls must still work.
+- With Auto on, set cues between beats, Preview and confirm the visible cues snap to nearby beats. Check the blend sounds aligned and Track B's pitch stays recognizable despite the tempo change. Try manual BPM correction, two different presets, a WAV effect and all five stackable effects. Listen to transients for warbling, clicks or stereo imbalance.
+- Preview, Stop, Replay and export the same mix. Compare preview samples to the matching exported segment and verify the adjusted cue times and expected output duration. Repeat the preview; `session.log` should contain `beatmatch_cache_hit=1`. Relaunch and load the same pair; BPM and matched-audio caches should be reused.
+- Cancel waveform analysis, MP3 conversion, matched-song preparation and export, then retry. Verify no stale `.part` files, no altered source WAV/MP3, and another song still plays. Test unstable tempo and silent songs; enter BPM manually or disable Auto. Try a ratio beyond 25%, missing files and low free storage.
+- Capture `TIMING waveform_ms`, `beatmatch_ms`, `beatmatch_cache_hit`, preview/export times, `ui_draw_avg_us`, and total elapsed preview time before and after on the same Vita and songs. Check free storage and stability after switching songs, repeated playback, PS/LiveArea close and suspend/resume. Host timing is only a diagnostic and does not prove stock-clock performance.
+
 1. Install with VitaShell. Confirm icon and LiveArea launch, readable 960×544 layout, D-pad focus and touch targets.
 2. Use two 44.1 kHz/stereo/16-bit WAV songs. Verify browser names, durations, actual waveform peaks, millisecond editing and held-button repeat.
 3. Preview Crossfade, each other effect individually, and all five together. Check pitch/speed, both headphone channels, no buffer buzzing/dropouts, and expected cues.

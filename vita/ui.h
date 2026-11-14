@@ -16,6 +16,8 @@ typedef struct {
   char status[180];
   unsigned short peaks[2][WAVE_BINS];
   double wave_pan, wave_window, wave_origin[2];
+  float track_bpm[2];
+  int bpm_manual[2], auto_beatmatch;
   int tab, effect_index, preset_bank, preset_page;
   double play_position, preview_length;
   int preset_browser, selected_preset;

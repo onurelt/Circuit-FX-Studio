@@ -61,7 +61,13 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(x+49,8,&small,c,d?"TRACK B":"TRACK A",86);
     txt(x+49,23,&body,WHITE,v->songs[d]?v->songs[d]:"Select song",285);
     tc(a,sizeof(a),v->lengths[d],0);
-    txt(x+363,20,&small,MUTED,v->songs[d]?a:"OPEN",78);
+    txt(x+363,8,&small,MUTED,v->songs[d]?a:"OPEN",85);
+    if (v->songs[d]) {
+      if (v->track_bpm[d]>0)
+        snprintf(s,sizeof(s),"%.1f BPM%s",v->track_bpm[d],v->bpm_manual[d]?"*":"");
+      else snprintf(s,sizeof(s),"BPM ...");
+      txt(x+354,25,&small,c,s,101);
+    }
   }
   /* 266px timeline area: two vertically generous, aligned waveforms. */
   rect(10,50,940,265,RGB(14,25,39));
@@ -145,8 +151,10 @@ void ui_draw(uint32_t *pixels, const View *v) {
     }
     if (v->tab==0) {
       txt(18,513,&body,WHITE,fx[selected],155);
-      txt(172,515,&small,MUTED,desc[selected],430);
-      txt(623,515,&small,CYAN,"Tap a card to choose one transition",315);
+      txt(172,515,&small,MUTED,desc[selected],421);
+      flat_button(620,507,320,35,
+                  v->auto_beatmatch?"AUTO BEATMATCH  ON":"AUTO BEATMATCH  OFF",
+                  v->auto_beatmatch?CYAN:MUTED,v->auto_beatmatch);
     } else {
       int active=(v->settings.effects&(1u<<selected))!=0;
       flat_button(14,497,136,42,active?"ENABLED":"DISABLED",active?CYAN:MUTED,active);
@@ -155,7 +163,9 @@ void ui_draw(uint32_t *pixels, const View *v) {
       snprintf(s,sizeof(s),"%.0f%%",v->settings.intensity*100);
       txt(405,509,&body,WHITE,s,65);
       flat_button(466,497,52,42,"+",CYAN,0);
-      if (v->settings.preset_id) {
+      if (v->auto_beatmatch)
+        txt(560,509,&small,MUTED,"FX BPM follows Track A",355);
+      else if (v->settings.preset_id) {
         txt(547,507,&small,MUTED,"FX BPM",125);
         flat_button(710,497,52,42,"-",PINK,0);
         snprintf(s,sizeof(s),"%.0f",v->settings.bpm);
@@ -190,11 +200,15 @@ void ui_draw(uint32_t *pixels, const View *v) {
                p.sample_id?"  /  WAV sound":"");
       txt(83,519,&small,WHITE,s,380);
     }
-    txt(472,519,&small,MUTED,"BPM",57);
-    flat_button(563,510,42,31,"-",PINK,0);
-    snprintf(s,sizeof(s),"%.0f",v->settings.bpm);
-    txt(613,519,&small,WHITE,s,43);
-    flat_button(665,510,42,31,"+",PINK,0);
+    if (v->auto_beatmatch)
+      txt(485,519,&small,CYAN,"FX BPM = TRACK A",220);
+    else {
+      txt(472,519,&small,MUTED,"BPM",57);
+      flat_button(563,510,42,31,"-",PINK,0);
+      snprintf(s,sizeof(s),"%.0f",v->settings.bpm);
+      txt(613,519,&small,WHITE,s,43);
+      flat_button(665,510,42,31,"+",PINK,0);
+    }
     flat_button(722,510,157,31,"DETAIL / APPLY",CYAN,0);
     flat_button(884,510,55,31,">",PINK,0);
   }

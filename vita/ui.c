@@ -162,7 +162,11 @@ double ui_timeline_span(const View *v) {
 }
 int ui_hit_test_for_tab(const View *v, int x, int y) {
   if (x<10 || x>=950 || y<0 || y>=544) return -1;
-  if (y >= 6 && y < 47) return x < 470 ? 0 : x >= 490 ? 1 : -1;
+  if (y >= 6 && y < 47) {
+    if (v->songs[0] && y>=22 && x>=364 && x<470) return 160;
+    if (v->songs[1] && y>=22 && x>=844 && x<950) return 161;
+    return x < 470 ? 0 : x >= 490 ? 1 : -1;
+  }
   if (y >= 318 && y < 365) {
     if (x < 112) return 10;
     if (x < 178) return 101; /* Stop */
@@ -183,16 +187,18 @@ int ui_hit_test_for_tab(const View *v, int x, int y) {
       return 120 + (x - 14) / 188;
     if (y >= 507 && y < 544)
       return x < 68 ? 140 : x >= 884 ? 141 : x >= 722 ? 142 :
-             x >= 563 && x < 605 ? 153 : x >= 665 && x < 707 ? 154 : -1;
+             !v->auto_beatmatch && x >= 563 && x < 605 ? 153 :
+             !v->auto_beatmatch && x >= 665 && x < 707 ? 154 : -1;
   } else if (v->tab == 1) {
     if (y >= 420 && y < 490 && x >= 14 && x < 946)
       return 120 + (x - 14) / 188;
     if (y >= 497 && y < 541)
       return x < 150 ? 150 : x >= 340 && x < 392 ? 151 :
              x >= 466 && x < 518 ? 152 :
-             v->settings.preset_id && x >= 710 && x < 762 ? 153 :
-             v->settings.preset_id && x >= 872 && x < 924 ? 154 : -1;
-  } else if (y >= 420 && y < 504 && x >= 14 && x < 946)
+             v->settings.preset_id && !v->auto_beatmatch && x >= 710 && x < 762 ? 153 :
+             v->settings.preset_id && !v->auto_beatmatch && x >= 872 && x < 924 ? 154 : -1;
+  } else if (y>=507 && y<543 && x>=620 && x<940) return 162;
+  else if (y >= 420 && y < 504 && x >= 14 && x < 946)
     return 120 + (x - 14) / 188;
   return -1;
 }
@@ -393,12 +399,14 @@ static void draw_wave(const View *v, int deck, double pan, double span,
              : v->editing == 2 ? "Track B cue"
              : v->editing == 3 ? "transition duration"
              : v->editing == 4 ? "effect BPM"
+             : v->editing == 6 ? "Track A BPM"
+             : v->editing == 7 ? "Track B BPM"
                                : "FX intensity");
     txt(264, 88, &title, WHITE, s, 430);
     roundbox(264, 128, 432, 51, 6, RGB(9, 17, 29), RGB(12, 23, 37));
     txt(278, 137, &large, CYAN, v->entry, 330);
     txt(617, 152, &small, MUTED,
-        v->editing == 4   ? "BPM"
+        v->editing == 4 || v->editing==6 || v->editing==7 ? "BPM"
         : v->editing == 5 ? "percent"
                           : "seconds",
         70);
@@ -416,7 +424,9 @@ static void draw_wave(const View *v, int deck, double pan, double span,
     txt(264, 443, &small, RGB(255, 160, 140),
         v->edit_error[0] ? v->edit_error
         : v->editing == 4
-            ? "60-200 BPM; effects timing, not automatic beatmatching"
+            ? "60-200 BPM; effects timing"
+        : v->editing==6 || v->editing==7
+            ? "70-180 BPM. Set your song's tempo manually."
         : v->editing == 5 ? "0-100%; controls effect strength, not track volume"
                           : "Enter seconds, e.g. 155.250 = 02:35.250",
         430);

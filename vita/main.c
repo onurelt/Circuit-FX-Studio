@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "mp3_import.h"
+#include "beatmatch.h"
 #include <math.h>
 #include <psp2/audioout.h>
 #include <psp2/ctrl.h>
@@ -25,6 +26,9 @@ static View view;
 static char songs[MAX_SONGS][256], paths[2][512];
 static char originals[2][512], selected_names[2][256];
 static char cache_paths[2][512];
+static char matched_path[512], render_paths[2][512];
+static MixSettings render_settings;
+static BeatInfo beats[2];
 static char active_wave_part[512];
 static int count, ready;
 static uint32_t previous, held;
@@ -76,6 +80,7 @@ static const SceDateTime *cache_age(const SceIoStat *st) {
 }
 static int cache_protected(const char *path) {
   if (active_wave_part[0] && !strcmp(active_wave_part, path)) return 1;
+  if (matched_path[0] && !strcmp(matched_path,path)) return 1;
   for (int i = 0; i < 2; ++i)
     if (cache_paths[i][0] && !strcmp(cache_paths[i], path))
       return 1;
@@ -206,6 +211,7 @@ static void message(const char *s) {
 }
 static void invalidate(void) {
   ready = view.ready = 0;
+  matched_path[0]=0;
   remove(PREVIEW);
   screen_dirty = 1;
 }
@@ -310,12 +316,46 @@ static void scan(void) {
 }
 #define WAVE_MAGIC 0x57415632u
 typedef struct { uint32_t magic, signature, frames, bins; } WaveHeader;
+#define BEAT_MAGIC 0x42454131u
+typedef struct { uint32_t magic, signature, frames; BeatInfo info; } BeatDisk;
+static void beat_cache_name(char *out,size_t size,uint32_t key) {
+  snprintf(out,size,ROOT "/cache/beat-%08x-v1.bin",key);
+}
+static int beat_load(int deck,uint32_t key,uint32_t frames) {
+  char path[512];
+  beat_cache_name(path,sizeof(path),key);
+  FILE *f=fopen(path,"rb");
+  if (!f) return -1;
+  BeatDisk disk;
+  int okay=fread(&disk,1,sizeof(disk),f)==sizeof(disk) &&
+           fgetc(f)==EOF && disk.magic==BEAT_MAGIC &&
+           disk.signature==key && disk.frames==frames &&
+           isfinite(disk.info.bpm) && isfinite(disk.info.phase_seconds) &&
+           isfinite(disk.info.confidence);
+  fclose(f);
+  if (!okay) {remove(path);return -1;}
+  beats[deck]=disk.info;
+  if (!view.bpm_manual[deck]) view.track_bpm[deck]=disk.info.bpm;
+  logline("TIMING beat_cache_hit=1");
+  return 0;
+}
+static void beat_save(uint32_t key,uint32_t frames,BeatInfo info) {
+  char path[512],part[512];
+  beat_cache_name(path,sizeof(path),key);
+  snprintf(part,sizeof(part),ROOT "/cache/beat-%08x-v1.part",key);
+  FILE *f=fopen(part,"wb");
+  BeatDisk disk={BEAT_MAGIC,key,frames,info};
+  int okay=f && fwrite(&disk,1,sizeof(disk),f)==sizeof(disk);
+  if (f && fclose(f)) okay=0;
+  if (!okay || rename(part,path)) remove(part);
+}
 static struct {
   atomic_int cancel, done, result;
   SceUID thread;
   char input[512], cache[512], part[512];
   uint32_t signature, frames, offset;
   uint16_t peaks[WAVE_BINS];
+  BeatInfo beat;
 } wave_job;
 static int wave_pending[2], wave_ready[2];
 static char wave_inputs[2][512];
@@ -363,6 +403,8 @@ static int wave_worker(SceSize args, void *argp) {
   }
   if (f) fclose(f);
   if (!result) {
+    wave_job.beat=beat_analyze_peaks(wave_job.peaks,WAVE_BINS,
+                                     (double)wave_job.frames/44100);
     FILE *out=fopen(wave_job.part,"wb");
     WaveHeader h={WAVE_MAGIC,wave_job.signature,wave_job.frames,WAVE_BINS};
     if (!out || fwrite(&h,1,sizeof(h),out)!=sizeof(h) ||
@@ -371,6 +413,7 @@ static int wave_worker(SceSize args, void *argp) {
     if (out && fclose(out)) result=-1;
     if (!result && rename(wave_job.part,wave_job.cache)) result=-1;
     if (result) remove(wave_job.part);
+    else beat_save(wave_job.signature,wave_job.frames,wave_job.beat);
   }
   char timing[128];
   snprintf(timing,sizeof(timing),"TIMING waveform_ms=%llu result=%d",
@@ -393,6 +436,9 @@ static void wave_request(int deck, const char *source, uint32_t frames,
   snprintf(wave_inputs[deck],sizeof(wave_inputs[deck]),"%s",
            cached_pcm ? paths[deck] : source);
   memset(view.peaks[deck],0,sizeof(view.peaks[deck]));
+  beats[deck]=(BeatInfo){0};
+  if (!view.bpm_manual[deck]) view.track_bpm[deck]=0;
+  if (key) beat_load(deck,key,frames);
   if (wave_running && !strcmp(wave_job.input,wave_inputs[deck]) &&
       wave_job.signature==key) return;
   if (wave_running && !strcmp(wave_job.input,source) &&
@@ -411,6 +457,8 @@ static void wave_poll(void) {
         if (wave_pending[d] && wave_keys[d]==wave_job.signature &&
             !strcmp(wave_inputs[d],wave_job.input)) {
           memcpy(view.peaks[d],wave_job.peaks,sizeof(view.peaks[d]));
+          beats[d]=wave_job.beat;
+          if (!view.bpm_manual[d]) view.track_bpm[d]=beats[d].bpm;
           wave_pending[d]=0; wave_ready[d]=1; screen_dirty=1;
         }
       cache_touch(wave_job.cache);
@@ -426,6 +474,8 @@ static void wave_poll(void) {
     if (wave_ready[other] && wave_keys[d]==wave_keys[other] &&
         !strcmp(wave_inputs[d],wave_inputs[other])) {
       memcpy(view.peaks[d],view.peaks[other],sizeof(view.peaks[d]));
+      beats[d]=beats[other];
+      if (!view.bpm_manual[d]) view.track_bpm[d]=beats[d].bpm;
       wave_pending[d]=0; wave_ready[d]=1; screen_dirty=1;
       continue;
     }
@@ -442,6 +492,12 @@ static void wave_poll(void) {
       fclose(f);
       if (ok) {
         wave_pending[d]=0; wave_ready[d]=1; screen_dirty=1;
+        if (beat_load(d,wave_keys[d],wave_frames[d])) {
+          beats[d]=beat_analyze_peaks(view.peaks[d],WAVE_BINS,
+                                      (double)wave_frames[d]/44100);
+          if (!view.bpm_manual[d]) view.track_bpm[d]=beats[d].bpm;
+          beat_save(wave_keys[d],wave_frames[d],beats[d]);
+        }
         cache_touch(cache);
         logline("TIMING waveform_cache_hit=1");
         continue;
@@ -596,6 +652,132 @@ static int ensure_pcm(int deck) {
   prune_cache();
   return 0;
 }
+static struct {
+  atomic_int cancel,done,result;
+  atomic_uint processed,total;
+  char input[512],output[512];
+  double ratio;
+} match_job;
+static int match_progress(uint32_t at,uint32_t total) {
+  atomic_store(&match_job.processed,at);
+  atomic_store(&match_job.total,total);
+  return atomic_load(&match_job.cancel);
+}
+static int match_worker(SceSize args,void *argp) {
+  (void)args;(void)argp;
+  int rc=beat_stretch_wav(match_job.input,match_job.output,
+                           match_job.ratio,match_progress);
+  atomic_store(&match_job.result,rc);
+  atomic_store(&match_job.done,1);
+  return 0;
+}
+static int stretch_async(const char *input,const char *output,double ratio) {
+  snprintf(match_job.input,sizeof(match_job.input),"%s",input);
+  snprintf(match_job.output,sizeof(match_job.output),"%s",output);
+  match_job.ratio=ratio;
+  atomic_store(&match_job.cancel,0);
+  atomic_store(&match_job.done,0);
+  atomic_store(&match_job.result,-1);
+  atomic_store(&match_job.processed,0);
+  atomic_store(&match_job.total,0);
+  SceUID thread=sceKernelCreateThread("CircuitFX Beatmatch",match_worker,
+                                      0x10000110,128*1024,0,0,NULL);
+  if (thread<0) return -1;
+  if (sceKernelStartThread(thread,0,NULL)<0) {
+    sceKernelDeleteThread(thread);return -1;
+  }
+  view.progress=0;
+  show();
+  int last=-1;
+  uint64_t tick=sceKernelGetProcessTimeWide()+500000;
+  while (!atomic_load(&match_job.done)) {
+    unsigned hit=buttons();
+    int tapped=touch_press();
+    if ((hit&SCE_CTRL_CIRCLE) ||
+        (tapped && touch_x>=192 && touch_x<768 && touch_y>=185 && touch_y<349))
+      atomic_store(&match_job.cancel,1);
+    unsigned total=atomic_load(&match_job.total);
+    unsigned done=atomic_load(&match_job.processed);
+    int percent=total?(int)((uint64_t)done*100/total):0;
+    if (percent!=last) {view.progress=percent;show();last=percent;}
+    uint64_t now=sceKernelGetProcessTimeWide();
+    if (now>=tick) {sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);tick=now+500000;}
+    sceKernelDelayThread(10000);
+  }
+  sceKernelWaitThreadEnd(thread,NULL,NULL);
+  sceKernelDeleteThread(thread);
+  view.progress=-1;
+  screen_dirty=1;
+  return atomic_load(&match_job.result);
+}
+static int wait_for_beats(void) {
+  for (int d=0;d<2;d++) {
+    if (view.track_bpm[d]>0) continue;
+    message("Analyzing song beats. Circle to cancel.");
+    view.progress=0;
+    show();
+    while (wave_pending[d] || wave_running) {
+      wave_poll();
+      if (buttons()&SCE_CTRL_CIRCLE) break;
+      int tapped=touch_press();
+      if (tapped && touch_x>=192 && touch_x<768 && touch_y>=185 && touch_y<349)
+        break;
+      if (view.track_bpm[d]>0) break;
+      sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+      sceKernelDelayThread(10000);
+    }
+    view.progress=-1;
+    screen_dirty=1;
+    if (view.track_bpm[d]<=0) {
+      message("No stable beat found. Set song BPM or turn Auto off.");
+      return -1;
+    }
+  }
+  return 0;
+}
+static int prepare_match(double ratio) {
+  snprintf(render_paths[0],sizeof(render_paths[0]),"%s",paths[0]);
+  snprintf(render_paths[1],sizeof(render_paths[1]),"%s",paths[1]);
+  if (fabs(ratio-1)<.001) return 0;
+  SceIoStat st;
+  uint32_t key=track_signature(originals[1],&st);
+  if (!key) {message("Track B changed. Select it again.");return -1;}
+  uint32_t a=(uint32_t)lround(view.track_bpm[0]*1000);
+  uint32_t b=(uint32_t)lround(view.track_bpm[1]*1000);
+  key=(key^a)*16777619u;
+  key=(key^b)*16777619u;
+  char cache[512],part[512];
+  snprintf(cache,sizeof(cache),ROOT "/cache/match-%08x-v1.wav",key);
+  snprintf(part,sizeof(part),ROOT "/cache/match-%08x-v1.part",key);
+  uint32_t frames,offset;
+  if (inspect_wav(cache,&frames,&offset)) {
+    remove(cache);remove(part);
+    uint32_t source_frames,source_offset;
+    if (inspect_wav(paths[1],&source_frames,&source_offset)) {
+      message(render_error);return -1;
+    }
+    if ((uint64_t)llround(source_frames/ratio)*4+44>CACHE_LIMIT_BYTES) {
+      message("Matched song exceeds the 512 MB cache limit.");return -1;
+    }
+    uint64_t started=sceKernelGetProcessTimeWide();
+    message("Preparing pitch-preserving beatmatch. Circle cancels.");
+    int rc=stretch_async(paths[1],part,ratio);
+    char timing[120];
+    snprintf(timing,sizeof(timing),"TIMING beatmatch_ms=%llu result=%d",
+             (unsigned long long)(sceKernelGetProcessTimeWide()-started)/1000,rc);
+    logline(timing);
+    if (rc || rename(part,cache)) {
+      remove(part);
+      message(beatmatch_error[0]?beatmatch_error:"Could not cache matched song.");
+      return -1;
+    }
+  } else logline("TIMING beatmatch_cache_hit=1");
+  snprintf(matched_path,sizeof(matched_path),"%s",cache);
+  snprintf(render_paths[1],sizeof(render_paths[1]),"%s",cache);
+  cache_touch(cache);
+  prune_cache();
+  return 0;
+}
 static void browse(int deck) {
   view.browser = 1;
   view.browser_pos = 0;
@@ -687,6 +869,7 @@ static void browse(int deck) {
       else
         view.settings.start_b = 0;
       view.wave_origin[deck] = deck ? view.settings.start_b : view.settings.start_a;
+      view.bpm_manual[deck]=0;
       wave_request(deck, path, frames, offset);
       prune_cache();
       char timing[128];
@@ -860,15 +1043,43 @@ static void preview(void) {
     return;
   }
   invalidate();
+  double ratio=1;
+  if (view.auto_beatmatch) {
+    if (wait_for_beats()) return;
+    ratio=view.track_bpm[0]/view.track_bpm[1];
+    if (ratio<.75 || ratio>1.3334) {
+      message("Tempos differ by over 25%. Adjust BPM or turn Auto off.");
+      return;
+    }
+    for (int d=0;d<2;d++) {
+      double *cue=d?&view.settings.start_b:&view.settings.start_a;
+      BeatInfo grid=beats[d];
+      grid.bpm=view.track_bpm[d];
+      if (view.bpm_manual[d])
+        grid.phase_seconds=(float)fmod(*cue,60./grid.bpm);
+      double aligned=beat_nearest(*cue,&grid);
+      double limit=view.lengths[d]-view.settings.duration;
+      if (limit<0) {message("Transition exceeds a song.");return;}
+      while (aligned>limit && aligned>=60./grid.bpm)
+        aligned-=60./grid.bpm;
+      *cue=round(fmax(0,fmin(limit,aligned))*1000)/1000;
+      view.wave_origin[d]=*cue;
+    }
+    view.settings.bpm=view.track_bpm[0];
+  }
   /* Keep the waveform worker off the storage bus while importing PCM. */
   wave_shutdown();
   for (int d=0; d<2; d++)
     if (ensure_pcm(d)) return;
+  render_settings=view.settings;
+  if (prepare_match(ratio)) return;
+  if (view.auto_beatmatch) render_settings.start_b/=ratio;
   message("Rendering preview...");
   view.progress = 0;
   show();
   uint64_t render_started = sceKernelGetProcessTimeWide();
-  int rc = render_mix(paths[0], paths[1], PREVIEW, &view.settings, 1, progress);
+  int rc = render_mix(render_paths[0],render_paths[1],PREVIEW,
+                      &render_settings,1,progress);
   char timing[128];
   snprintf(timing, sizeof(timing), "TIMING preview_render_ms=%llu result=%d",
            (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
@@ -939,7 +1150,8 @@ static void export_mix(void) {
   view.progress = 0;
   show();
   uint64_t render_started = sceKernelGetProcessTimeWide();
-  int rc = render_mix(paths[0], paths[1], out, &view.settings, 0, progress);
+  int rc = render_mix(render_paths[0],render_paths[1],out,
+                      &render_settings,0,progress);
   char timing[128];
   snprintf(timing, sizeof(timing), "TIMING export_render_ms=%llu result=%d",
            (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
@@ -1046,7 +1258,9 @@ static void browse_presets(void) {
     if (h & SCE_CTRL_CROSS) {
       TransitionPreset p;
       preset_get(view.selected_preset, &p);
-      double duration = p.beats * 60.0 / view.settings.bpm;
+      double tempo=view.auto_beatmatch && view.track_bpm[0]>0 ?
+                   view.track_bpm[0] : view.settings.bpm;
+      double duration = p.beats * 60.0 / tempo;
       double available = 120;
       if (view.songs[0])
         available = fmin(available, view.lengths[0] - view.settings.start_a);
@@ -1079,7 +1293,10 @@ static void browse_presets(void) {
   screen_dirty = 1;
 }
 static void edit_time(int row) {
-  double extra = row == 13 ? view.settings.bpm : view.settings.intensity * 100;
+  double extra = row == 13 ? view.settings.bpm
+               : row == 14 ? view.settings.intensity * 100
+               : row >= 15 && view.track_bpm[row-15]>0 ?
+                 view.track_bpm[row-15] : 120;
   double *value = row >= 13  ? &extra
                   : row == 2 ? &view.settings.start_a
                   : row == 3 ? &view.settings.start_b
@@ -1127,18 +1344,20 @@ static void edit_time(int row) {
     if ((h & SCE_CTRL_CROSS) || key == 13) {
       char *end;
       double number = strtod(view.entry, &end);
-      double max = row == 13   ? 200
+      double max = row >= 15   ? 180
+                   : row == 13   ? 200
                    : row == 14 ? 100
                    : row == 4  ? 120
                                : view.lengths[row - 2],
-             min = row == 13  ? 60
+             min = row >= 15  ? 70
+                   : row == 13  ? 60
                    : row == 4 ? .1
                               : 0;
       if (!view.entry[0] || *end || !isfinite(number) || number < min ||
           number > max) {
         snprintf(view.edit_error, sizeof(view.edit_error),
                  "Enter %.3f to %.3f %s", min, max,
-                 row == 13   ? "BPM"
+                 row == 13 || row>=15 ? "BPM"
                  : row == 14 ? "percent"
                              : "seconds");
         continue;
@@ -1149,8 +1368,14 @@ static void edit_time(int row) {
         view.settings.bpm = extra;
       else if (row == 14)
         view.settings.intensity = extra / 100;
+      else if (row>=15) {
+        int deck=row-15;
+        view.track_bpm[deck]=(float)extra;
+        view.bpm_manual[deck]=1;
+      }
       invalidate();
-      message(row >= 13 ? "Effect settings updated. Preview to hear the change."
+      message(row >= 15 ? "Song BPM set manually. Auto uses this tempo."
+              : row >= 13 ? "Effect settings updated. Preview to hear the change."
                         : "Cue updated. Preview to hear your transition.");
       break;
     }
@@ -1183,7 +1408,13 @@ static void card_action(int index) {
   }
 }
 static void direct_action(int action) {
-  if (action>=110 && action<=112) {
+  if (action==160 || action==161) edit_time(15+action-160);
+  else if (action==162) {
+    view.auto_beatmatch=!view.auto_beatmatch;
+    invalidate();
+    message(view.auto_beatmatch?"Auto beatmatch ON. Preview prepares the mix.":
+                                "Auto beatmatch OFF. Original tempos used.");
+  } else if (action>=110 && action<=112) {
     view.tab=action-110;
     screen_dirty=1;
   } else if (action>=120 && action<125) card_action(action-120);
@@ -1227,7 +1458,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.9 / 01.09\n");
+    fprintf(log, "Circuit FX Vita Beta 2.0 / 02.00\n");
     fclose(log);
   }
   if (vita2d_init() < 0 || ui_gpu_init() < 0) {
@@ -1247,6 +1478,7 @@ int main(void) {
                                 .sample_reverse = 0};
   view.settings.bpm = 128;
   view.settings.intensity = 1;
+  view.auto_beatmatch=1;
   view.wave_window=45;
   view.wave_pan=-20;
   view.selected_preset=65;
