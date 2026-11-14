@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "mp3_import.h"
 #include <math.h>
 #include <psp2/audioout.h>
 #include <psp2/ctrl.h>
@@ -21,6 +22,7 @@
 #define MAX_SONGS 512
 static View view;
 static char songs[MAX_SONGS][256], paths[2][512];
+static char cache_paths[2][512];
 static int count, ready, back;
 static uint32_t previous, held;
 static uint32_t *buffers[2];
@@ -28,6 +30,34 @@ static SceUID blocks[2];
 static int timeline_dirty = 1;
 static uint64_t timeline_due;
 static int touch_x, touch_y, touch_down;
+static int progress(uint32_t done, uint32_t total);
+static int has_suffix(const char *name, const char *suffix) {
+  size_t n = strlen(name), s = strlen(suffix);
+  return n >= s && !strcasecmp(name + n - s, suffix);
+}
+static uint32_t filename_hash(const char *name) {
+  uint32_t hash = 2166136261u;
+  while (*name)
+    hash = (hash ^ (unsigned char)*name++) * 16777619u;
+  return hash;
+}
+static void clean_mp3_cache(void) {
+  int d = sceIoDopen(ROOT "/cache");
+  if (d < 0)
+    return;
+  SceIoDirent entry;
+  memset(&entry, 0, sizeof(entry));
+  while (sceIoDread(d, &entry) > 0) {
+    if (strcmp(entry.d_name, ".") && strcmp(entry.d_name, "..") &&
+        !SCE_S_ISDIR(entry.d_stat.st_mode)) {
+      char path[512];
+      snprintf(path, sizeof(path), ROOT "/cache/%s", entry.d_name);
+      remove(path);
+    }
+    memset(&entry, 0, sizeof(entry));
+  }
+  sceIoDclose(d);
+}
 static int touch_press(void) {
   SceTouchData t = {0};
   sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1);
@@ -133,9 +163,8 @@ static void scan(void) {
   SceIoDirent e;
   memset(&e, 0, sizeof(e));
   while (sceIoDread(d, &e) > 0) {
-    size_t n = strlen(e.d_name);
-    if (!SCE_S_ISDIR(e.d_stat.st_mode) && n > 4 &&
-        !strcasecmp(e.d_name + n - 4, ".wav") && count < MAX_SONGS)
+    if (!SCE_S_ISDIR(e.d_stat.st_mode) && count < MAX_SONGS &&
+        (has_suffix(e.d_name, ".wav") || has_suffix(e.d_name, ".mp3")))
       snprintf(songs[count++], 256, "%s", e.d_name);
     memset(&e, 0, sizeof(e));
   }
@@ -200,14 +229,58 @@ static void browse(int deck) {
     if (hit & SCE_CTRL_DOWN)
       view.browser_pos = (view.browser_pos + 1) % count;
     if (hit & SCE_CTRL_CROSS) {
-      char path[512];
+      char path[512], source_path[512], cache_path[512], part_path[512];
       snprintf(path, sizeof(path), ROOT "/music/%s", songs[view.browser_pos]);
+      int is_mp3 = has_suffix(path, ".mp3");
+      int use_cached_mp3 = 0;
+      if (is_mp3) {
+        unsigned deck_id = (unsigned)deck + 1;
+        uint32_t hash = filename_hash(path);
+        snprintf(cache_path, sizeof(cache_path),
+                 ROOT "/cache/track%u-%08x.wav", deck_id, hash);
+        snprintf(part_path, sizeof(part_path),
+                 ROOT "/cache/track%u-%08x.part", deck_id, hash);
+        SceIoStat cached;
+        use_cached_mp3 = !strcmp(cache_paths[deck], cache_path) &&
+                         sceIoGetstat(cache_path, &cached) >= 0;
+        if (!use_cached_mp3) {
+          remove(part_path);
+          message("Decoding MP3 to a temporary WAV...");
+          view.progress = 0;
+          show();
+          int decode_result = mp3_import_to_wav(path, part_path, progress);
+          view.progress = -1;
+          if (decode_result) {
+            remove(part_path);
+            message(mp3_import_error);
+            break;
+          }
+          remove(cache_path);
+          if (rename(part_path, cache_path)) {
+            remove(part_path);
+            message("Could not keep the decoded song. Check storage space.");
+            break;
+          }
+        }
+        snprintf(source_path, sizeof(source_path), "%s", cache_path);
+      } else {
+        snprintf(source_path, sizeof(source_path), "%s", path);
+      }
       uint32_t frames, offset;
-      if (inspect_wav(path, &frames, &offset)) {
+      if (inspect_wav(source_path, &frames, &offset)) {
+        if (is_mp3 && !use_cached_mp3)
+          remove(cache_path);
         message(render_error);
         break;
       }
-      snprintf(paths[deck], sizeof(paths[deck]), "%s", path);
+      if (cache_paths[deck][0] &&
+          (!is_mp3 || strcmp(cache_paths[deck], cache_path)))
+        remove(cache_paths[deck]);
+      if (is_mp3)
+        snprintf(cache_paths[deck], sizeof(cache_paths[deck]), "%s", cache_path);
+      else
+        cache_paths[deck][0] = 0;
+      snprintf(paths[deck], sizeof(paths[deck]), "%s", source_path);
       view.songs[deck] = strrchr(paths[deck], '/') + 1;
       view.lengths[deck] = (double)frames / 44100;
       invalidate();
@@ -522,7 +595,7 @@ static void browse_presets(void) {
       }
       snprintf(path, sizeof(path), "app0:sfx/%02d.wav", selected.sample_id);
       if (!selected.sample_id || play_file(path, 1))
-        message("Cannot play bundled WAV. Reinstall Beta 1.5.");
+        message("Cannot play bundled WAV. Reinstall Beta 1.6.");
       else
         message("WAV audition finished. Settings apply to audition and mix.");
     }
@@ -633,10 +706,12 @@ int main(void) {
   sceIoMkdir(ROOT, 0777);
   sceIoMkdir(ROOT "/music", 0777);
   sceIoMkdir(ROOT "/exports", 0777);
+  sceIoMkdir(ROOT "/cache", 0777);
+  clean_mp3_cache();
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.5 / 01.05\n");
+    fprintf(log, "Circuit FX Vita Beta 1.6 / 01.06\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {
@@ -663,7 +738,7 @@ int main(void) {
   view.settings.bpm = 128;
   view.settings.intensity = 1;
   scan();
-  message("Choose two WAV songs. Triangle: exit safely.");
+  message("Choose two songs. WAV or MP3. Triangle: exit safely.");
   while (1) {
     if (timeline_dirty && sceKernelGetProcessTimeWide() >= timeline_due)
       refresh_timeline();
@@ -729,6 +804,9 @@ int main(void) {
     }
   }
   remove(PREVIEW);
+  for (int i = 0; i < 2; i++)
+    if (cache_paths[i][0])
+      remove(cache_paths[i]);
   logline("Clean exit");
   sceKernelExitProcess(0);
   return 0;

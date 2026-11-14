@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 typedef struct {
   int w, h;
   const unsigned char *widths, *glyphs;
@@ -159,8 +160,8 @@ void ui_draw(uint32_t *pixels, const View *v) {
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.5", 70);
-  txt(733, 13, &small, MUTED, "OFFLINE  /  WAV STUDIO", 211);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.6", 70);
+  txt(733, 13, &small, MUTED, "OFFLINE  /  WAV + MP3", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];
   for (int d = 0; d < 2; d++) {
@@ -183,8 +184,12 @@ void ui_draw(uint32_t *pixels, const View *v) {
       *ext = 0;
     txt(x + 92, 78, &title, WHITE, name, 350);
     tc(a, sizeof(a), v->lengths[d], 0);
+    const char *format = "STEREO WAV";
+    const char *song_ext = v->songs[d] ? strrchr(v->songs[d], '.') : NULL;
+    if (song_ext && !strcasecmp(song_ext, ".mp3"))
+      format = "MP3 -> PCM WAV";
     snprintf(s, sizeof(s), "%s    %s", v->songs[d] ? a : "No track loaded",
-             v->songs[d] ? "STEREO WAV" : "Tap to open your music");
+             v->songs[d] ? format : "Tap to open your music");
     txt(x + 93, 116, &small, MUTED, s, 350);
   }
   panel(14, 160, 932, 102, 0, EDGE);
@@ -297,7 +302,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   if (v->progress >= 0) {
     dim();
     panel(192, 185, 576, 164, 1, CYAN);
-    txt(219, 204, &title, WHITE, "Rendering your transition", 520);
+    txt(219, 204, &title, WHITE, "Processing audio", 520);
     snprintf(s, sizeof(s), "%d%%   /   Circle to cancel", v->progress);
     txt(219, 245, &body, MUTED, s, 520);
     roundbox(219, 295, 522, 8, 4, BG, BG);
@@ -320,7 +325,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
     panel(66, 44, 828, 456, 1, CYAN);
     txt(88, 58, &title, WHITE, "Your music", 500);
     txt(88, 92, &small, MUTED,
-        "ux0:data/CircuitFX/music    /    44.1 kHz stereo 16-bit WAV", 760);
+        "ux0:data/CircuitFX/music    /    WAV or MP3 (decoded on load)", 760);
     for (int i = 0; i < 10; i++)
       if (v->entries[i]) {
         int y = 132 + i * 31;
@@ -332,7 +337,8 @@ void ui_draw(uint32_t *pixels, const View *v) {
       }
     if (!v->browser_count)
       txt(88, 180, &body, WHITE,
-          "Copy WAV songs into the music folder, then press SELECT.", 770);
+          "Copy WAV or MP3 songs into the music folder, then press SELECT.",
+          770);
     snprintf(s, sizeof(s),
              "%d songs   /   Touch a song to load   /   X Select   Circle Back",
              v->browser_count);

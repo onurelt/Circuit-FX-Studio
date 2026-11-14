@@ -49,3 +49,14 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Check short riser overlaps use the riser's end so each resolves on the cut. Check whooshes/impacts/glitches stay centered in the overlap. Listen for clicks, audio-port release, latency and stutter.
 - The renderer uses bounded sample memory and linear resampling. Confirm export speed and system responsiveness on Vita, especially 0.5x and 2.0x, and after many consecutive auditions.
 - Install over 01.04 with VitaShell. Confirm VPK size, LiveArea launch and effect resources load from `app0:sfx`.
+
+## Version 01.06 additions
+
+- Install over 01.05. Copy MP3 and WAV songs into the music folder; refresh with SELECT and verify both extensions appear once and show the right track name.
+- Load stereo 44.1 kHz MP3 and mono 22.05 kHz MP3. Confirm a conversion progress screen, correct duration, stereo output for mono input, visible peaks, exact cue editing, preview and WAV export.
+- Try common 48 kHz and 32 kHz MP3 files, VBR MP3, large ID3 tags, a damaged MP3 and a file over the 64 MB compressed limit. Errors must leave the original file and the previously loaded deck intact.
+- Cancel a long decode with Circle; select another track afterward. Confirm no `.part` file remains and mixing stays responsive once conversion ends.
+- Watch free storage while loading two long MP3 tracks and exporting. Each decoded cache uses about 10.1 MiB per song-minute; confirm low-storage errors clean up partial WAVs.
+- Re-select the same MP3 on one deck to confirm the in-session cache is reused. Switch that deck to WAV and confirm its old cache is freed.
+- Exit with Triangle and verify decoded caches are removed. Separately force-close during conversion, relaunch, and verify startup removes stale cache files without touching originals.
+- Compare the converted-cache preview with the exported mix and check long-track decoding time, audio quality, memory use and app responsiveness on real hardware.

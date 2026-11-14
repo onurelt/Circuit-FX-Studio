@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 1
+name: Build Circuit FX Studio Vita Beta 1.6
 on:
   push:
   workflow_dispatch:
@@ -12,15 +12,19 @@ jobs:
       - name: Test the production audio engine
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
+          python3 tests/test_mp3.py
       - name: Address and undefined-behavior sanitizers
         run: |
           gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert_asan
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
+          MP3_IMPORT_EXE=tests/mp3_convert_asan ASAN_OPTIONS=detect_leaks=0 python3 tests/test_mp3.py
       - name: Compile and exercise production UI
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui
@@ -47,7 +51,7 @@ jobs:
           python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta1
+          name: Circuit-FX-Studio-Vita-Beta1.6
           path: |
             build/CircuitFX-Beta1.vpk
             README.md

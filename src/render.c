@@ -167,7 +167,7 @@ int render_mix(const char *ap, const char *bp, const char *op,
     char path[96];
     snprintf(path, sizeof(path), SAMPLE_ROOT "/%02d.wav", preset.sample_id);
     if (open_source(&sample, path)) {
-      fail("Bundled WAV missing or damaged. Reinstall Beta 1.5.");
+      fail("Bundled WAV missing or damaged. Reinstall Beta 1.6.");
       goto finish;
     }
     if (sample.frames > MAX_SFX_FRAMES) {

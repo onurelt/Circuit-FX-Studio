@@ -2,6 +2,17 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.6 — MP3 song import (01.06)
+
+The song browser now lists `.mp3` and `.wav` files. MP3s are decoded to temporary 44.1 kHz, stereo, 16-bit PCM WAVs when selected, then use the same cue, preview, effects and WAV-export pipeline as WAV songs. Mono and stereo MP3s from 8 to 48 kHz are resampled. MP3 originals are never modified.
+
+- Copy songs into `ux0:data/CircuitFX/music/`, then press SELECT to refresh.
+- The first selection of an MP3 shows conversion progress; Circle cancels it. Decoded files are cached for the two loaded decks and removed when the app exits or on its next launch after an unexpected close.
+- Compressed MP3s can be at most 64 MB. The temporary decoded WAV uses about **10.1 MiB per minute per track**, so leave room for both caches and the exported mix. Conversion stops cleanly if storage runs out.
+- The decoder supports ordinary MPEG Layer III files. Damaged or unsupported inputs return an error without changing the original song.
+
+This beta does not read album art or track metadata from MP3 tags.
+
 ## Beta 1.5 — 25 real WAV effects and 128 transition recipes (01.05)
 
 The **WAV FX** tabs include 25 one-shot sounds: 8 whooshes, 6 risers, 6 glitches, and 5 impacts. You can listen to them on their own with no songs loaded, then add one to your two-song transition. The package includes the actual audio; no separate sample download is needed.
@@ -26,7 +37,7 @@ Open **Browse DJ-inspired presets** in the right panel. Four banks have 16 origi
 - **FX intensity** (0–100%) adjusts echo, filters, bass cuts and the recipe's special modifiers; it is not master volume and does not remove the gain handoff or change its curve.
 - Every recipe supports the same preview and full WAV export. You can still toggle the five basic effects. Extra recipe modifiers stay active until a different recipe is chosen; pick a plain blend recipe to clear them.
 - New effects include stereo feedback echoes, high-pass lifts, source-slice rolls, rhythmic gates, ring modulation, electronic noise sweeps and dip envelopes. No drum samples or artist recordings are added.
-- WAV input remains 44.1 kHz stereo 16-bit PCM. No vocal separation, MP3 support or automatic beatmatching is claimed.
+- At that beta stage, WAV input was 44.1 kHz stereo 16-bit PCM. Automatic beatmatching is still not included.
 
 ![DJ-inspired preset browser](docs/presets-preview.png)
 
@@ -52,9 +63,7 @@ The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebui
 3. Put songs in `ux0:data/CircuitFX/music/` using VitaShell USB or FTP.
 4. Launch Circuit FX Studio. Select Track A and Track B.
 
-**Input:** 44,100 Hz, stereo, signed 16-bit PCM `.wav`. Up to 512 files, directly inside the music folder. MP3, mono, 48 kHz, float and 24-bit WAV are not supported in this beta. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
-
-Optional conversion on a computer: `ffmpeg -i input.mp3 -ar 44100 -ac 2 -c:a pcm_s16le output.wav`.
+**Input:** Up to 512 `.wav` or `.mp3` files directly inside the music folder. WAV requires 44,100 Hz, stereo, signed 16-bit PCM. MP3 is decoded on selection and resampled to that format; mono/stereo 8–48 kHz files up to 64 MB are supported. Mono, 48 kHz, float and 24-bit WAV remain unsupported. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
 
 ## Make a mix
 
@@ -86,7 +95,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs the host audio regression suite, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1` artifact from a successful run. The workflow pins the SDK archive and SHA-256; no third-party graphics/audio libraries are needed.
+GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.6` artifact from a successful run. The workflow pins the SDK archive and SHA-256. minimp3 is compiled into the app; it adds no runtime plugin.
 
 Local Vita build:
 
@@ -103,10 +112,12 @@ Host tests:
 ```sh
 gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
 python3 tests/test_audio.py
+gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
+python3 tests/test_mp3.py
 ```
 
 The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
 
-**Not included:** MP3 decoding, automatic tempo/beat matching, BPM detection, user-saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
+**Not included:** automatic tempo/beat matching, BPM detection, user-saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
 
 This is a compiled, host-tested **hardware-test beta**, not a claim of verified playback on a physical Vita. See [HARDWARE_TESTING.md](HARDWARE_TESTING.md). Diagnostic messages are recorded in `ux0:data/CircuitFX/session.log` (reset on launch).
