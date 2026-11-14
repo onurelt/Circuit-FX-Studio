@@ -2,6 +2,14 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.8 — Vita2D, lazy MP3 import and full-song waveforms (01.08)
+
+The 960×544 interface now draws through Vita2D: GPU gradient panels, cached glyph atlases and batched waveform bars replace the software framebuffer. It redraws on state changes and uses the Vita's normal clock. Touch targets and all effect controls remain in place.
+
+Choosing an uncached MP3 now probes its length and shows the song without writing a full decoded WAV. A low-priority, cancellable worker builds a compact full-song waveform envelope directly from MP3 frames; WAVs use a sequential scan. Both 8,192-bin envelopes persist in the bounded cache and load without rescanning on later launches. Drag a waveform horizontally, pinch to zoom, or drag its white cue marker. Each deck keeps its own view. The envelope is an approximate visual peak summary; cue times and audio mixing retain millisecond values.
+
+The first preview of an uncached MP3 still creates a 44.1 kHz stereo PCM cache for the existing accurate mixer, then reuses it for later previews and export. This keeps the preview/export DSP path and sound quality identical to 01.07. Conversion can be cancelled with Circle or a touch on its dialog. MP3 duration probing can still scan a file without a VBR duration tag; cached PCM and envelopes are fast paths. UI CPU submission time, waveform build times, cache hits and render times are written to `ux0:data/CircuitFX/session.log`. Real frame time, pinch behavior, audio and suspend/close stability require a Vita check at stock clocks.
+
 ## Beta 1.7 — faster browsing and persistent audio cache (01.07)
 
 Song browsing and MP3 conversion no longer redraw the whole interface continuously. The browser redraws on navigation, and the main dashboard sleeps between input events. Cue and effect changes rebuild the timeline from the in-memory waveform envelope instead of re-opening and seeking through both song files. Per-track waveform envelopes are cached too.
@@ -103,7 +111,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.7` artifact from a successful run. The workflow pins the SDK archive and SHA-256. minimp3 is compiled into the app; it adds no runtime plugin.
+GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.8` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
 
 Local Vita build:
 

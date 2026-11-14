@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 1.7
+name: Build Circuit FX Studio Vita Beta 1.8
 on:
   push:
   workflow_dispatch:
@@ -13,6 +13,8 @@ jobs:
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_waveform.c -lm -o tests/mp3_waveform
+          tests/mp3_waveform tests/fixtures/test-stereo-44100.mp3
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
@@ -29,7 +31,7 @@ jobs:
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui
           /tmp/ui
-          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ivita tests/test_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-ui
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_UI -DUI_TEST -Isrc -Ivita tests/test_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-ui
           /tmp/test-ui
   build:
     needs: audio-tests
@@ -44,6 +46,10 @@ jobs:
           tar -xjf /tmp/vitasdk.tar.bz2 -C "$RUNNER_TEMP/vita"
           echo "VITASDK=$RUNNER_TEMP/vita/vitasdk" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/vita/vitasdk/bin" >> "$GITHUB_PATH"
+      - name: Install Vita2D graphics library
+        run: |
+          "$VITASDK/bin/vdpm" refresh 2026.08
+          printf 'y\n' | "$VITASDK/bin/vdpm" install libvita2d
       - name: Compile installable VPK
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -51,7 +57,7 @@ jobs:
           python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta1.7
+          name: Circuit-FX-Studio-Vita-Beta1.8
           path: |
             build/CircuitFX-Beta1.vpk
             README.md

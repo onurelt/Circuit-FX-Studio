@@ -10,7 +10,10 @@ target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
 # Keep a 64 KiB gap after the RX segment so vita-elf-create can append SCE
 # module metadata without colliding with the first RW load segment.
 target_link_options(CircuitFX PRIVATE "-Wl,--section-start=.init_array=0x81080000")
-target_link_libraries(CircuitFX m SceDisplay_stub SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub SceRtc_stub)
+target_link_libraries(CircuitFX vita2d SceGxm_stub SceDisplay_stub SceSysmodule_stub
+  ScePgf_stub ScePvf_stub SceCommonDialog_stub SceAppMgr_stub
+  SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub SceRtc_stub
+  freetype png jpeg z m)
 vita_create_self(CircuitFX.self CircuitFX UNSAFE)
 file(GLOB SFX_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/sfx/*")
 set(SFX_ARGS)
@@ -19,7 +22,7 @@ foreach(SFX IN LISTS SFX_FILES)
   list(APPEND SFX_ARGS FILE "${SFX}" "sfx/${SFX_NAME}")
 endforeach()
 vita_create_vpk(CircuitFX-Beta1.vpk CFXS00001 CircuitFX.self
-  VERSION 01.07 NAME "Circuit FX Studio"
+  VERSION 01.08 NAME "Circuit FX Studio"
   ${SFX_ARGS}
   FILE assets/icon0.png sce_sys/icon0.png
   FILE assets/bg.png sce_sys/livearea/contents/bg.png

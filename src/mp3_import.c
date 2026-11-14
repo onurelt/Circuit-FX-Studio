@@ -2,6 +2,7 @@
 #include "wav.h"
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -30,6 +31,96 @@ static int fail(const char *message) {
 static int16_t clamp_sample(float x) {
   x = fmaxf(-32768.f, fminf(32767.f, x));
   return (int16_t)lrintf(x);
+}
+
+static int open_decoder(const char *path, FILE **file, mp3dec_ex_t *decoder,
+                        mp3dec_io_t *io, uint32_t *frames, int flags) {
+  *file = fopen(path, "rb");
+  if (!*file)
+    return fail("Cannot open MP3 file.");
+  if (fseek(*file, 0, SEEK_END))
+    return fail("Cannot seek MP3 file.");
+  long bytes = ftell(*file);
+  if (bytes < 32 || (unsigned long)bytes > MAX_MP3_BYTES ||
+      fseek(*file, 0, SEEK_SET))
+    return fail("MP3 must be between 32 bytes and 64 MB.");
+  *io = (mp3dec_io_t){.read = mp3_read, .read_data = *file,
+                       .seek = mp3_seek, .seek_data = *file};
+  if (mp3dec_ex_open_cb(decoder, io, flags))
+    return fail("Cannot decode this MP3. Check that it is complete.");
+  unsigned ch = decoder->info.channels, hz = decoder->info.hz;
+  uint64_t source = ch ? decoder->samples / ch : 0;
+  if (!ch || ch > 2 || hz < 8000 || hz > 48000 ||
+      decoder->info.layer != 3 || !source)
+    return fail("Use a valid mono or stereo MP3 (8-48 kHz).");
+  uint64_t target = (uint64_t)llround((double)source * OUTPUT_RATE / hz);
+  if (!target || target > (INT32_MAX - 44u) / 4u)
+    return fail("Decoded song is too long for a WAV export.");
+  *frames = (uint32_t)target;
+  return 0;
+}
+
+int mp3_probe(const char *path, uint32_t *target_frames) {
+  FILE *f = NULL;
+  mp3dec_ex_t decoder = {0};
+  mp3dec_io_t io = {0};
+  mp3_import_error[0] = 0;
+  int rc = !path || !target_frames ? fail("Invalid MP3 path.") :
+           open_decoder(path, &f, &decoder, &io, target_frames, MP3D_DO_NOT_SCAN);
+  if (rc && f && decoder.info.layer == 3 && !decoder.samples) {
+    mp3dec_ex_close(&decoder);
+    fclose(f);
+    f = NULL;
+    memset(&decoder, 0, sizeof(decoder));
+    rc = open_decoder(path, &f, &decoder, &io, target_frames,
+                      MP3D_SEEK_TO_SAMPLE);
+  }
+  mp3dec_ex_close(&decoder);
+  if (f) fclose(f);
+  return rc;
+}
+
+int mp3_waveform_peaks(const char *path, uint16_t *peaks, unsigned bins,
+                       Mp3ImportProgress progress) {
+  FILE *f = NULL;
+  mp3dec_ex_t decoder = {0};
+  mp3dec_io_t io = {0};
+  uint32_t target_frames = 0;
+  mp3_import_error[0] = 0;
+  if (!peaks || !bins || !path)
+    return fail("Invalid waveform request.");
+  memset(peaks, 0, bins * sizeof(*peaks));
+  int rc = open_decoder(path, &f, &decoder, &io, &target_frames,
+                        MP3D_SEEK_TO_SAMPLE);
+  if (rc) goto done;
+  unsigned ch = decoder.info.channels;
+  uint64_t source = decoder.samples / ch, at = 0;
+  mp3d_sample_t pcm[INPUT_FRAMES * 2];
+  while (at < source) {
+    size_t got = mp3dec_ex_read(&decoder, pcm, INPUT_FRAMES * ch);
+    if (!got || got % ch || decoder.last_error) {
+      rc = fail("MP3 waveform decoding failed.");
+      goto done;
+    }
+    size_t count = got / ch;
+    for (size_t i = 0; i < count; i += 8) {
+      unsigned bin = (unsigned)(((at+i) * bins) / source);
+      if (bin >= bins) bin = bins - 1;
+      int peak = abs(pcm[i*ch]);
+      if (ch == 2 && abs(pcm[i*ch+1]) > peak) peak = abs(pcm[i*ch+1]);
+      if (peak > peaks[bin]) peaks[bin] = (uint16_t)peak;
+    }
+    at += count;
+    if (progress && progress((uint32_t)(at > UINT32_MAX ? UINT32_MAX : at),
+                             (uint32_t)(source > UINT32_MAX ? UINT32_MAX : source))) {
+      rc = fail("MP3 waveform cancelled.");
+      goto done;
+    }
+  }
+done:
+  mp3dec_ex_close(&decoder);
+  if (f) fclose(f);
+  return rc;
 }
 
 int mp3_import_to_wav(const char *input_path, const char *output_path,

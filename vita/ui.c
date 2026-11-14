@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#ifndef HOST_UI
+#include <vita2d.h>
+#endif
 typedef struct {
   int w, h;
   const unsigned char *widths, *glyphs;
@@ -25,13 +28,19 @@ static uint32_t blend(uint32_t a, uint32_t b, int t) {
   return c;
 }
 static void rect(int x, int y, int w, int h, uint32_t c) {
+#ifdef HOST_UI
   for (int j = y; j < y + h && j < 544; j++)
     for (int i = x; i < x + w && i < 960; i++)
       if (i >= 0 && j >= 0)
         fb[j * 960 + i] = c;
+#else
+  if (w > 0 && h > 0)
+    vita2d_draw_rectangle(x, y, w, h, c);
+#endif
 }
 static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
                      uint32_t bottom) {
+#ifdef HOST_UI
   for (int j = 0; j < h; j++) {
     int cut = 0;
     if (j < r)
@@ -41,6 +50,34 @@ static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
     rect(x + cut, y + j, w - 2 * cut, 1,
          blend(top, bottom, j * 255 / (h > 1 ? h - 1 : 1)));
   }
+#else
+  if (w <= 0 || h <= 0)
+    return;
+  if (r > w / 2) r = w / 2;
+  if (r > h / 2) r = h / 2;
+  /* One GPU batch for the gradient body, four small rounded corners. */
+  vita2d_color_vertex *v=vita2d_pool_malloc(18*sizeof(*v));
+  if (!v) return;
+  int edges[3][4] = {{x+r,y,w-2*r,h}, {x,y+r,r,h-2*r},
+                     {x+w-r,y+r,r,h-2*r}};
+  for (int k=0;k<3;k++) {
+    int *e=edges[k];
+    uint32_t a=k ? blend(top,bottom,r*255/h) : top;
+    uint32_t b=k ? blend(top,bottom,(h-r)*255/h) : bottom;
+    vita2d_color_vertex quad[6] = {
+      {e[0],e[1],0,a},{e[0]+e[2],e[1],0,a},
+      {e[0],e[1]+e[3],0,b},{e[0]+e[2],e[1],0,a},
+      {e[0]+e[2],e[1]+e[3],0,b},{e[0],e[1]+e[3],0,b}};
+    memcpy(v+k*6,quad,sizeof(quad));
+  }
+  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,18);
+  if (r) {
+    vita2d_draw_fill_circle(x+r,y+r,r,top);
+    vita2d_draw_fill_circle(x+w-r,y+r,r,top);
+    vita2d_draw_fill_circle(x+r,y+h-r,r,bottom);
+    vita2d_draw_fill_circle(x+w-r,y+h-r,r,bottom);
+  }
+#endif
 }
 static void panel(int x, int y, int w, int h, int active, uint32_t accent) {
   roundbox(x - 2, y - 2, w + 4, h + 4, 13, blend(BG, accent, active ? 60 : 15),
@@ -51,6 +88,10 @@ static void panel(int x, int y, int w, int h, int active, uint32_t accent) {
 static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
                 int limit) {
   int right = x + limit;
+#ifndef HOST_UI
+  int slot = font == &small ? 0 : font == &body ? 1 : font == &title ? 2 : 3;
+  extern vita2d_texture *ui_atlases[4];
+#endif
   for (; *s; s++) {
     unsigned c = (unsigned char)*s;
     if (c < 32 || c > 126)
@@ -58,6 +99,7 @@ static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
     c -= 32;
     if (x + font->widths[c] > right)
       break;
+#ifdef HOST_UI
     for (int j = 0; j < font->h; j++)
       for (int i = 0; i < font->w; i++) {
         int px = x + i, py = y + j;
@@ -67,9 +109,44 @@ static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
         if (a)
           fb[py * 960 + px] = blend(fb[py * 960 + px], color, a);
       }
+#else
+    if (ui_atlases[slot])
+      vita2d_draw_texture_tint_part(ui_atlases[slot], x, y,
+          (c % 16) * font->w, (c / 16) * font->h, font->w, font->h, color);
+#endif
     x += font->widths[c];
   }
 }
+#ifndef HOST_UI
+vita2d_texture *ui_atlases[4];
+int ui_gpu_init(void) {
+  const Font *fonts[4]={&small,&body,&title,&large};
+  for (int k=0;k<4;k++) {
+    const Font *f=fonts[k];
+    vita2d_texture *t=vita2d_create_empty_texture_format(
+        16*f->w,6*f->h,SCE_GXM_TEXTURE_FORMAT_P8_ABGR);
+    if (!t) { ui_gpu_fini(); return -1; }
+    ui_atlases[k]=t;
+    unsigned char *data=vita2d_texture_get_datap(t);
+    uint32_t *palette=vita2d_texture_get_palette(t);
+    unsigned stride=vita2d_texture_get_stride(t);
+    for (int a=0;a<256;a++) palette[a]=0x00ffffffu | ((uint32_t)a<<24);
+    for (int c=0;c<95;c++)
+      for (int y=0;y<f->h;y++)
+        memcpy(data+(c/16*f->h+y)*stride+(c%16)*f->w,
+            f->glyphs+(c*f->h+y)*f->w,f->w);
+    vita2d_texture_set_filters(t,SCE_GXM_TEXTURE_FILTER_POINT,
+                                 SCE_GXM_TEXTURE_FILTER_POINT);
+  }
+  return 0;
+}
+void ui_gpu_fini(void) {
+  for (int k=0;k<4;k++) {
+    if (ui_atlases[k]) vita2d_free_texture(ui_atlases[k]);
+    ui_atlases[k]=NULL;
+  }
+}
+#endif
 static void tc(char *s, size_t n, double t, int precise) {
   int ms = (int)(fmax(0, t) * 1000 + .5);
   if (precise)
@@ -150,17 +227,60 @@ int ui_key_test(int x, int y) {
   return r * 3 + c;
 }
 static void dim(void) {
+#ifdef HOST_UI
   for (int i = 0; i < 960 * 544; i++)
     fb[i] = blend(fb[i], BG, 190);
+#else
+  vita2d_draw_rectangle(0,0,960,544,(BG & 0x00ffffffu) | (190u<<24));
+#endif
+}
+static void draw_wave(const View *v, int deck, double start, double span,
+                      int y, uint32_t color) {
+  double length = v->lengths[deck];
+  if (length <= 0) return;
+#ifndef HOST_UI
+  vita2d_color_vertex *bars=vita2d_pool_malloc(880*6*sizeof(*bars));
+  if (!bars) return;
+#endif
+  for (int i=0;i<880;i++) {
+    double t=start+span*(i+0.5)/880.0;
+    if (t < 0 || t >= length) t = length - .000001;
+    int bin=(int)(t*(WAVE_BINS-1)/length);
+    int h=v->peaks[deck][bin]*15/32768;
+    if (h < 1) h=1;
+#ifdef HOST_UI
+    rect(54+i,y-h,1,h*2+1,color);
+#else
+    vita2d_color_vertex quad[6]={
+      {54+i,y-h,0,color},{55+i,y-h,0,color},
+      {54+i,y+h+1,0,color},{55+i,y-h,0,color},
+      {55+i,y+h+1,0,color},{54+i,y+h+1,0,color}};
+    memcpy(bars+i*6,quad,sizeof(quad));
+#endif
+  }
+#ifndef HOST_UI
+  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,bars,880*6);
+#endif
 }
 void ui_draw(uint32_t *pixels, const View *v) {
   fb = pixels;
+#ifdef HOST_UI
   for (int y = 0; y < 544; y++)
     rect(0, y, 960, 1, blend(RGB(19, 24, 40), BG, y * 255 / 544));
+#else
+  vita2d_color_vertex *bg=vita2d_pool_malloc(6*sizeof(*bg));
+  if (!bg) return;
+  vita2d_color_vertex background[6]={
+    {0,0,0,RGB(19,24,40)},{960,0,0,RGB(19,24,40)},
+    {0,544,0,BG},{960,0,0,RGB(19,24,40)},
+    {960,544,0,BG},{0,544,0,BG}};
+  memcpy(bg,background,sizeof(background));
+  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,bg,6);
+#endif
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.7", 70);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.8", 70);
   txt(733, 13, &small, MUTED, "OFFLINE  /  WAV + MP3", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];
@@ -171,7 +291,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
     roundbox(x + 12, 61, 65, 74, 8, blend(BG, c, 34), RGB(12, 20, 34));
     txt(x + 32, 65, &large, c, d ? "B" : "A", 40);
     for (int i = 0; i < 25; i++) {
-      int h = v->peaks[d][i * 17] * 18 / 32768;
+      int h = v->peaks[d][i * (WAVE_BINS - 1) / 25] * 18 / 32768;
       rect(x + 19 + i * 2, 120 - h / 2, 1, h ? h : 1, c);
     }
     txt(x + 92, 57, &small, c,
@@ -193,48 +313,42 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(x + 93, 116, &small, MUTED, s, 350);
   }
   panel(14, 160, 932, 102, 0, EDGE);
-  double pre = ui_timeline_pre(v), span = ui_timeline_span(v);
-  int left = 54, start = left + (int)(880 * pre / span),
-      end = left + (int)(880 * (pre + v->settings.duration) / span);
-  for (int i = 0; i <= 8; i++) {
-    int x = left + i * 110;
-    rect(x, 184, 1, 70, RGB(31, 43, 60));
-    tc(a, sizeof(a), v->settings.start_a - pre + span * i / 8, 0);
-    txt(x - 14, 163, &small, MUTED, a, 60);
-  }
-  rect(start, 185, end - start, 68, RGB(42, 33, 72));
-  txt(24, 190, &body, CYAN, "A", 24);
-  txt(24, 224, &body, PINK, "B", 24);
-  for (int d = 0; d < 2; d++) {
-    uint32_t c = d ? PINK : CYAN;
-    int y = 207 + d * 33;
-    rect(left, y, 880, 1, RGB(43, 49, 69));
-    for (int i = 0; i < 880; i++) {
-      double rel = span * i / 880 - pre;
-      float gain = 1;
-      if (rel >= 0 && rel < v->settings.duration) {
-        float t = rel / v->settings.duration;
-        gain = d ? t : 1 - t;
-        if ((v->settings.effects & FX_QUICK_CUT) ||
-            !(v->settings.effects & FX_CROSSFADE))
-          gain = d ? (t >= .5f) : (t < .5f);
-      }
-      int h = (int)(v->timeline[d][i] * 13 / 32768.0f);
-      uint32_t col = blend(RGB(50, 43, 74), c, (int)(70 + 185 * gain));
-      if (h)
-        rect(left + i, y - h, 1, h * 2 + 1, col);
+  txt(309,163,&small,MUTED,"Drag waveform  /  Pinch zoom  /  Drag cue",540);
+  char time_left[32], time_right[32];
+  for (int d=0;d<2;d++) {
+    double length=v->lengths[d];
+    double span=v->wave_span[d]>0 ? fmin(v->wave_span[d],length) : length;
+    double start=fmax(0,fmin(v->wave_start[d],length-span));
+    int y=196+d*39;
+    uint32_t c=d ? PINK : CYAN;
+    txt(24,y-10,&body,c,d ? "B" : "A",24);
+    rect(54,y,880,1,RGB(43,49,69));
+    if (length<=0) continue;
+    tc(time_left,sizeof(time_left),start,0);
+    tc(time_right,sizeof(time_right),start+span,0);
+    txt(55,y-30,&small,MUTED,time_left,75);
+    txt(851,y-30,&small,MUTED,time_right,83);
+    double cue=d ? v->settings.start_b : v->settings.start_a;
+    int cue_x=54+(int)(880*(cue-start)/span);
+    int end_x=54+(int)(880*(cue+v->settings.duration-start)/span);
+    if (end_x>54 && cue_x<934) {
+      int shade_left=cue_x<54 ? 54 : cue_x;
+      int shade_right=end_x>934 ? 934 : end_x;
+      if (shade_right>shade_left)
+        rect(shade_left,y-16,shade_right-shade_left,33,RGB(42,33,72));
+    }
+    draw_wave(v,d,start,span,y,c);
+    if (cue_x>=54 && cue_x<934) {
+      rect(cue_x,y-18,2,37,WHITE);
+      roundbox(cue_x-3,y-22,8,5,2,WHITE,WHITE);
     }
   }
-  rect(start, 184, 2, 69, PINK);
-  rect(end, 184, 2, 69, PINK);
-  roundbox((start + end) / 2 - 65, 183, 130, 18, 4, RGB(85, 40, 117),
-           RGB(56, 30, 83));
-  snprintf(s, sizeof(s), "TRANSITION  %.1fs", v->settings.duration);
-  txt((start + end) / 2 - 57, 184, &small, WHITE, s, 118);
-  if (v->playing) {
-    int px = left + (int)(880 * fmin(v->play_position, span) / span);
-    rect(px, 184, 2, 70, WHITE);
-    roundbox(px - 3, 179, 8, 6, 2, WHITE, WHITE);
+  if (v->playing && v->lengths[0]>0) {
+    double span=v->wave_span[0]>0 ? fmin(v->wave_span[0],v->lengths[0])
+                                  : v->lengths[0];
+    double at=v->settings.start_a-ui_timeline_pre(v)+v->play_position;
+    int x=54+(int)(880*(at-v->wave_start[0])/span);
+    if (x>=54 && x<934) rect(x,178,2,37,WHITE);
   }
   const char *labels[] = {"A CUE", "B CUE", "DURATION"};
   double vals[] = {v->settings.start_a, v->settings.start_b,
@@ -325,7 +439,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
     panel(66, 44, 828, 456, 1, CYAN);
     txt(88, 58, &title, WHITE, "Your music", 500);
     txt(88, 92, &small, MUTED,
-        "ux0:data/CircuitFX/music    /    WAV or MP3 (decoded on load)", 760);
+        "ux0:data/CircuitFX/music    /    WAV or MP3 (PCM on preview)", 760);
     for (int i = 0; i < 10; i++)
       if (v->entries[i]) {
         int y = 132 + i * 31;
@@ -473,7 +587,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
         430);
   }
 }
-#ifdef HOST_UI
+#if defined(HOST_UI) && !defined(UI_TEST)
 int main(int argc, char **argv) {
   uint32_t *p = calloc(960 * 544, 4);
   View v = {0};
@@ -495,18 +609,11 @@ int main(int argc, char **argv) {
   v.ready = 1;
   snprintf(v.status, sizeof(v.status),
            "Preview ready. Layer effects or export your mix.");
-  /* Synthetic fixture only; production waveforms always come from selected
-   * WAVs. */
+  /* Synthetic fixture only; production waveforms come from audio files. */
   for (int d = 0; d < 2; d++) {
-    for (int i = 0; i < 440; i++)
-      v.peaks[d][i] = 12000 + 9000 * sinf(i * .27f);
-    for (int i = 0; i < 880; i++) {
-      double rel = ui_timeline_span(&v) * i / 880 - ui_timeline_pre(&v);
-      v.timeline[d][i] =
-          (d ? rel >= 0 : rel < 15)
-              ? (int)(5000 + 16000 * fabs(sin(i * .17) * sin(i * .031 + d)))
-              : 0;
-    }
+    for (int i = 0; i < WAVE_BINS; i++)
+      v.peaks[d][i] = 3000 + 22000 * fabs(sin(i * .17) * sin(i * .013 + d));
+    v.wave_span[d] = v.lengths[d];
   }
   if (argc > 1 && strcmp(argv[1], "editor") == 0) {
     v.editing = 1;

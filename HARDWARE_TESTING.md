@@ -71,3 +71,11 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Change cues/effects repeatedly while watching `session.log`. `TIMING timeline_ms` should stay small and cue/effect edits must not trigger waveform-file reads. Dashboard idle should not increment draw calls continuously; navigating should redraw promptly.
 - Verify `session.log` includes scan, song selection, import/cache, waveform, timeline, preview/export and final `ui_draw_*` timing entries. Capture it after a clean Triangle exit; launch resets the session log.
 - Exit while idle after a cache hit and after a canceled import. Relaunch, open another app, and confirm shutdown is clean and valid caches remain available.
+
+## Version 01.08 GPU and waveform checks
+
+- Install 01.08 over 01.07 and check the full 960×544 display, glyphs, gradients, touch targets, modal dialogs, LiveArea exit and restart on stock clocks. Compare `TIMING ui_draw_avg_us` and navigation feel with a saved 01.07 `session.log` from the same Vita and songs; host software timing is not comparable to Vita GPU time.
+- Select two long WAVs and two MP3s, with both decks using the same song and then different songs. Confirm both whole-song waveforms appear, cached waveform selection is faster on repeat, and idle UI does not redraw. Drag/pinch both rows and drag each white cue marker; verify time fields, precise edit, preview and export match the chosen cues.
+- Select a fresh MP3: song name/duration should appear before PCM conversion. Generate a preview to trigger conversion, cancel once, then retry. Relaunch and confirm `mp3_cache_hit` and `waveform_cache_hit` with no repeated full conversion.
+- Switch songs repeatedly while a waveform is still building; verify no stale waveform is shown for the newly selected song. Try a damaged MP3, missing source, nearly full storage and a forced close during a build. Relaunch, check no partial cache remains, then load/preview/export successfully.
+- Preview, replay and export with every effect and sample setting. Listen for stutter; check exported duration and sample content against 01.07. Test Triangle exit, PS/LiveArea close and suspend/resume after playback and during waveform generation. Save `session.log` before relaunch; attach it with Vita model and firmware for performance comparison.
