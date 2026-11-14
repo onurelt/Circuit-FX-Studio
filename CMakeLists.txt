@@ -10,7 +10,7 @@ target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
 target_link_libraries(CircuitFX m SceDisplay_stub SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub)
 vita_create_self(CircuitFX.self CircuitFX UNSAFE)
 vita_create_vpk(CircuitFX-Beta1.vpk CFXS00001 CircuitFX.self
-  VERSION 01.01 NAME "Circuit FX Studio"
+  VERSION 01.02 NAME "Circuit FX Studio"
   FILE assets/icon0.png sce_sys/icon0.png
   FILE assets/bg.png sce_sys/livearea/contents/bg.png
   FILE assets/startup.png sce_sys/livearea/contents/startup.png

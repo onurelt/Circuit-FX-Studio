@@ -10,6 +10,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
 #include <psp2/touch.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,59 @@ static int count, ready, back;
 static uint32_t previous, held;
 static uint32_t *buffers[2];
 static SceUID blocks[2];
+static int timeline_dirty = 1;
+static uint64_t timeline_due;
+static int touch_x, touch_y, touch_down;
+static int touch_press(void) {
+  SceTouchData t = {0};
+  sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1);
+  int pressed = t.reportNum && !touch_down;
+  touch_down = t.reportNum > 0;
+  if (t.reportNum) {
+    touch_x = t.report[0].x / 2;
+    touch_y = t.report[0].y / 2;
+  }
+  return pressed;
+}
+static void refresh_timeline(void) {
+  memset(view.timeline, 0, sizeof(view.timeline));
+  double pre = ui_timeline_pre(&view), span = ui_timeline_span(&view);
+  for (int d = 0; d < 2; d++) {
+    if (!view.songs[d])
+      continue;
+    uint32_t frames, offset;
+    if (inspect_wav(paths[d], &frames, &offset))
+      continue;
+    FILE *f = fopen(paths[d], "rb");
+    if (!f)
+      continue;
+    int16_t pcm[128];
+    for (int x = 0; x < TIMELINE_BINS; x++) {
+      double rel = span * x / TIMELINE_BINS - pre;
+      if ((d == 0 && rel >= view.settings.duration) || (d == 1 && rel < 0))
+        continue;
+      double t = (d ? view.settings.start_b : view.settings.start_a) + rel;
+      if (t < 0 || t >= view.lengths[d])
+        continue;
+      uint32_t at = (uint32_t)(t * 44100), n = frames - at;
+      if (n > 64)
+        n = 64;
+      if (fseek(f, offset + (long)at * 4, SEEK_SET))
+        break;
+      size_t got = fread(pcm, 2, n * 2, f);
+      int peak = 0;
+      for (size_t i = 0; i < got; i++) {
+        int a = abs((int)pcm[i]);
+        if (a > peak)
+          peak = a;
+      }
+      view.timeline[d][x] = peak;
+    }
+    fclose(f);
+  }
+  timeline_dirty = 0;
+}
+
 static void logline(const char *s) {
   FILE *f = fopen(ROOT "/session.log", "a");
   if (f) {
@@ -63,7 +117,9 @@ static void message(const char *s) {
   logline(s);
 }
 static void invalidate(void) {
-  ready = 0;
+  ready = view.ready = 0;
+  timeline_dirty = 1;
+  timeline_due = sceKernelGetProcessTimeWide() + 200000;
   remove(PREVIEW);
 }
 static int compare(const void *a, const void *b) { return strcasecmp(a, b); }
@@ -120,6 +176,21 @@ static void browse(int deck) {
       view.entries[i] = view.first + i < count ? songs[view.first + i] : NULL;
     show();
     uint32_t hit = buttons();
+    if (touch_press()) {
+      if (touch_x >= 82 && touch_x < 878 && touch_y >= 132 && touch_y < 442) {
+        int selected = view.first + (touch_y - 132) / 31;
+        if (selected < count) {
+          view.browser_pos = selected;
+          hit |= SCE_CTRL_CROSS;
+        }
+      } else if (touch_y >= 455 && touch_y < 495) {
+        if (touch_x >= 814)
+          view.browser_pos =
+              (view.first + 10 < count) ? view.first + 10 : view.browser_pos;
+        else if (touch_x >= 730)
+          view.browser_pos = view.first >= 10 ? view.first - 10 : 0;
+      }
+    }
     if (hit & SCE_CTRL_CIRCLE)
       break;
     if (!count)
@@ -164,54 +235,91 @@ static int progress(uint32_t done, uint32_t total) {
   buttons();
   return (held & SCE_CTRL_CIRCLE) != 0;
 }
-static int play(void) {
+/* Audio owns its port and file on a worker; GUI never blocks the audio feed. */
+static atomic_int audio_stop, audio_done, audio_result;
+static atomic_uint audio_frames;
+static int audio_worker(SceSize args, void *argp) {
+  (void)args;
+  (void)argp;
+  int result = -1, port = -1;
   FILE *f = fopen(PREVIEW, "rb");
-  if (!f)
-    return -1;
-  if (fseek(f, 44, SEEK_SET)) {
-    fclose(f);
-    return -1;
-  }
-  int port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, 1024, 44100,
-                                 SCE_AUDIO_OUT_MODE_STEREO);
-  if (port < 0) {
-    fclose(f);
-    return -1;
-  }
-  int volumes[2] = {SCE_AUDIO_VOLUME_0DB, SCE_AUDIO_VOLUME_0DB};
-  int rc = sceAudioOutSetVolume(
-      port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, volumes);
-  static int16_t audio_buffers[2][2048] __attribute__((aligned(64)));
-  int audio_index = 0;
-  view.playing = 1;
-  message("Playing preview. Circle / START stops.");
-  show();
-  while (rc >= 0) {
-    int16_t *pcm = audio_buffers[audio_index];
-    memset(pcm, 0, 4096);
-    size_t n = fread(pcm, 4, 1024, f);
+  static int16_t pcm[2][2048] __attribute__((aligned(64)));
+  if (!f || fseek(f, 44, SEEK_SET))
+    goto finish;
+  port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, 1024, 44100,
+                             SCE_AUDIO_OUT_MODE_STEREO);
+  if (port < 0)
+    goto finish;
+  int vols[2] = {SCE_AUDIO_VOLUME_0DB, SCE_AUDIO_VOLUME_0DB};
+  if (sceAudioOutSetVolume(
+          port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vols) <
+      0)
+    goto finish;
+  result = 0;
+  int index = 0;
+  while (!atomic_load(&audio_stop)) {
+    memset(pcm[index], 0, sizeof(pcm[index]));
+    size_t n = fread(pcm[index], 4, 1024, f);
     if (!n) {
       if (ferror(f))
-        rc = -1;
+        result = -1;
       break;
     }
-    if (sceAudioOutOutput(port, pcm) < 0) {
-      rc = -1;
+    if (sceAudioOutOutput(port, pcm[index]) < 0) {
+      result = -1;
       break;
     }
-    unsigned h = buttons();
-    if (h & (SCE_CTRL_CIRCLE | SCE_CTRL_START))
-      break;
-    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
-    audio_index ^= 1;
+    atomic_fetch_add(&audio_frames, (unsigned)n);
+    index ^= 1;
   }
-  /* Drain the last buffer before releasing this ordinary (non-background) port.
-   */
-  sceAudioOutOutput(port, NULL);
-  sceAudioOutReleasePort(port);
-  fclose(f);
+finish:
+  if (port >= 0) {
+    sceAudioOutOutput(port, NULL);
+    sceAudioOutReleasePort(port);
+  }
+  if (f)
+    fclose(f);
+  atomic_store(&audio_result, result);
+  atomic_store(&audio_done, 1);
+  return 0;
+}
+static int play(void) {
+  uint32_t frames, offset;
+  if (inspect_wav(PREVIEW, &frames, &offset))
+    return -1;
+  view.preview_length = (double)frames / 44100;
+  view.play_position = 0;
+  view.playing = 1;
+  atomic_store(&audio_stop, 0);
+  atomic_store(&audio_done, 0);
+  atomic_store(&audio_result, -1);
+  atomic_store(&audio_frames, 0);
+  SceUID thread = sceKernelCreateThread("CircuitFX Audio", audio_worker,
+                                        0x10000100, 65536, 0, 0, NULL);
+  if (thread < 0) {
+    view.playing = 0;
+    return -1;
+  }
+  if (sceKernelStartThread(thread, 0, NULL) < 0) {
+    sceKernelDeleteThread(thread);
+    view.playing = 0;
+    return -1;
+  }
+  message("Playing preview. Tap Stop, Circle or START to stop.");
+  while (!atomic_load(&audio_done)) {
+    view.play_position = (double)atomic_load(&audio_frames) / 44100;
+    show();
+    unsigned hit = buttons();
+    if ((hit & (SCE_CTRL_CIRCLE | SCE_CTRL_START)) ||
+        (touch_press() && ui_hit_test(touch_x, touch_y) == 10))
+      atomic_store(&audio_stop, 1);
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+  }
+  sceKernelWaitThreadEnd(thread, NULL, NULL);
+  sceKernelDeleteThread(thread);
   view.playing = 0;
-  return rc < 0 ? -1 : 0;
+  view.play_position = 0;
+  return atomic_load(&audio_result);
 }
 static void preview(void) {
   if (!view.songs[0] || !view.songs[1]) {
@@ -219,6 +327,7 @@ static void preview(void) {
     return;
   }
   invalidate();
+  refresh_timeline();
   message("Rendering preview...");
   view.progress = 0;
   show();
@@ -228,7 +337,7 @@ static void preview(void) {
     message(render_error);
     return;
   }
-  ready = 1;
+  ready = view.ready = 1;
   if (play())
     message("Audio playback failed. Square retries.");
   else
@@ -244,6 +353,12 @@ static void export_mix(void) {
   while (1) {
     show();
     unsigned h = buttons();
+    if (touch_press() && touch_y >= 312 && touch_y < 354) {
+      if (touch_x >= 201 && touch_x < 458)
+        h |= SCE_CTRL_CIRCLE;
+      if (touch_x >= 486 && touch_x < 759)
+        h |= SCE_CTRL_CROSS;
+    }
     if (h & SCE_CTRL_CIRCLE)
       break;
     if (h & SCE_CTRL_CROSS) {
@@ -281,26 +396,61 @@ static void export_mix(void) {
     message(s);
   }
 }
-static int touch_row(void) {
-  static int down;
-  SceTouchData t = {0};
-  sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1);
-  int row = -1;
-  if (t.reportNum && !down) {
-    int x = t.report[0].x / 2, y = t.report[0].y / 2;
-    if (y >= 53 && y < 158)
-      row = x < 480 ? 0 : 1;
-    else if (y >= 236 && y < 287)
-      row = x < 326 ? 2 : x < 640 ? 3 : 4;
-    else if (x < 480 && y >= 326 && y < 476)
-      row = 5 + (y - 326) / 30;
-    else if (x >= 488 && y >= 326 && y < 380)
-      row = 10;
-    else if (x >= 488 && y >= 389 && y < 443)
-      row = 11;
+static void edit_time(int row) {
+  double *value = row == 2   ? &view.settings.start_a
+                  : row == 3 ? &view.settings.start_b
+                             : &view.settings.duration;
+  view.editing = row - 1;
+  snprintf(view.entry, sizeof(view.entry), "%.3f", *value);
+  view.edit_error[0] = 0;
+  int fresh = 1;
+  while (view.editing) {
+    show();
+    unsigned h = buttons();
+    int key = -1;
+    if (touch_press())
+      key = ui_key_test(touch_x, touch_y);
+    if ((h & SCE_CTRL_CIRCLE) || key == 12)
+      break;
+    if (key >= 0 && key < 12) {
+      size_t n = strlen(view.entry);
+      view.edit_error[0] = 0;
+      if (key == 11) {
+        if (n)
+          view.entry[n - 1] = 0;
+        fresh = 0;
+      } else {
+        char c = key == 9 ? '.' : key == 10 ? '0' : (char)('1' + key);
+        if (fresh) {
+          view.entry[0] = 0;
+          n = 0;
+          fresh = 0;
+        }
+        char *dot = strchr(view.entry, '.');
+        if (n < 12 && !(c == '.' && dot) && !(dot && strlen(dot) > 3)) {
+          view.entry[n] = c;
+          view.entry[n + 1] = 0;
+        }
+      }
+    }
+    if ((h & SCE_CTRL_CROSS) || key == 13) {
+      char *end;
+      double number = strtod(view.entry, &end);
+      double max = row == 4 ? 120 : view.lengths[row - 2],
+             min = row == 4 ? .1 : 0;
+      if (!view.entry[0] || *end || !isfinite(number) || number < min ||
+          number > max) {
+        snprintf(view.edit_error, sizeof(view.edit_error),
+                 "Enter %.3f to %.3f seconds", min, max);
+        continue;
+      }
+      *value = round(number * 1000) / 1000;
+      invalidate();
+      message("Cue updated. Preview to hear your transition.");
+      break;
+    }
   }
-  down = t.reportNum > 0;
-  return row;
+  view.editing = 0;
 }
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
@@ -310,7 +460,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1 / 01.01\n");
+    fprintf(log, "Circuit FX Vita Beta 1.2 / 01.02\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {
@@ -332,20 +482,21 @@ int main(void) {
   scan();
   message("Choose two WAV songs. Triangle: exit safely.");
   while (1) {
+    if (timeline_dirty && sceKernelGetProcessTimeWide() >= timeline_due)
+      refresh_timeline();
     show();
     unsigned hit = buttons();
-    int tap = touch_row();
+    int tap = touch_press() ? ui_hit_test(touch_x, touch_y) : -1;
     if (tap >= 0) {
       view.row = tap;
-      if (tap < 2 || tap >= 5)
-        hit |= SCE_CTRL_CROSS;
+      hit |= SCE_CTRL_CROSS;
     }
     if (hit & SCE_CTRL_TRIANGLE)
       break;
     if (hit & SCE_CTRL_UP)
-      view.row = (view.row + 11) % 12;
+      view.row = (view.row + CONTROL_COUNT - 1) % CONTROL_COUNT;
     if (hit & SCE_CTRL_DOWN)
-      view.row = (view.row + 1) % 12;
+      view.row = (view.row + 1) % CONTROL_COUNT;
     if (hit & SCE_CTRL_SELECT) {
       scan();
       message("Song list refreshed.");
@@ -368,6 +519,8 @@ int main(void) {
     if (hit & SCE_CTRL_CROSS) {
       if (view.row < 2)
         browse(view.row);
+      else if (view.row >= 2 && view.row <= 4)
+        edit_time(view.row);
       else if (view.row >= 5 && view.row <= 9) {
         view.settings.effects ^= 1u << (view.row - 5);
         invalidate();
@@ -375,6 +528,13 @@ int main(void) {
         preview();
       else if (view.row == 11)
         export_mix();
+      else if (view.row >= 12 && view.row <= 14) {
+        const unsigned masks[] = {FX_CROSSFADE, FX_CROSSFADE | FX_ECHO,
+                                  FX_FILTER | FX_BASS_SWAP | FX_QUICK_CUT};
+        view.settings.effects = masks[view.row - 12];
+        invalidate();
+        message("Variation selected. Preview to hear it.");
+      }
     }
     if (hit & SCE_CTRL_START) { /* Clear the trigger edge before synchronous
                                    playback. */

@@ -2,6 +2,17 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.2 interface update (01.02)
+
+- Redesigned native dashboard with rounded panels, multiple font sizes, effect icons, switches and cyan/magenta track styling.
+- Shared sampled-waveform timeline aligned to both cue times, with shaded transition bounds and an animated preview playhead.
+- Tap a cue/duration field (or press X when focused) to enter seconds precisely on a touch keypad. Circle cancels; X applies. D-pad adjustment remains available.
+- Three real effect combinations: Smooth Blend, Echo Drift, Filter + Cut. These change the effect stack; preview renders the selected combination.
+- Touch song selection, browser page controls, export confirmation and preview stop.
+- Audio now runs on a dedicated worker while the interface animates. Physical Vita testing is still required, especially repeated preview/stop and shell interruptions.
+
+![Actual UI renderer with demonstration song data](docs/interface-preview.png)
+
 ## Installation rebuild (01.01)
 
 The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebuild forces 8-bit indexed PNGs and checks both bit depth and color type in the final VPK. Physical Vita installation still requires confirmation.
@@ -21,7 +32,7 @@ Optional conversion on a computer: `ffmpeg -i input.mp3 -ar 44100 -ac 2 -c:a pcm
 
 - D-pad up/down: select a control. X: open a song picker, toggle an effect, preview, or export.
 - D-pad left/right on A cue / B cue / duration: adjust by **0.1 second**. Hold **L** for **1 millisecond**, **R** for **10 seconds**. Holding a direction repeats.
-- Touch a deck, effect or action to activate it; touch a time field to focus it and adjust with D-pad. The file picker uses D-pad/X.
+- Touch a deck, effect or action to activate it; touch a time field to focus it and adjust with D-pad. The file picker supports touch selection, previous/next pages, and D-pad/X.
 - START: render and play a preview. Square: replay the current preview.
 - Circle: cancel rendering, stop playback, close a picker, or cancel export confirmation.
 - SELECT: refresh the song list. Triangle: cleanly exit from the dashboard.
@@ -66,8 +77,8 @@ gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c -lm -o
 python3 tests/test_audio.py
 ```
 
-The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
+The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
 
-**Not included:** MP3 decoding, automatic tempo/beat matching, BPM detection, variable effect strengths, saved presets, album artwork, a draggable timeline, or background/locked-screen playback. Waveform strips show sampled song peaks, not a zoomable editing timeline. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
+**Not included:** MP3 decoding, automatic tempo/beat matching, BPM detection, variable effect strengths, saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
 
 This is a compiled, host-tested **hardware-test beta**, not a claim of verified playback on a physical Vita. See [HARDWARE_TESTING.md](HARDWARE_TESTING.md). Diagnostic messages are recorded in `ux0:data/CircuitFX/session.log` (reset on launch).

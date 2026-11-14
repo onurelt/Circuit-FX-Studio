@@ -15,3 +15,11 @@ No physical Vita was available during development. Host tests exercise the same 
 11. Test PS button interruptions and power-button suspend/resume while previewing and exporting. Screen-locked/background playback is not supported or promised. Report any hangs; use Triangle from idle as the initial exit path.
 
 When reporting a problem, include Vita model/firmware, source WAV format, selected cues/duration/effects, action immediately before failure, and `ux0:data/CircuitFX/session.log`. Copy the log before relaunching because startup resets it.
+
+## Version 01.02 additions
+
+- Tap A/B cue fields and duration. Enter 155.250, 48.125 and 15.000 seconds; Apply, cancel and delete digits. Confirm D-pad exact adjustment still works.
+- Select each quick variation and check its effect toggles before previewing.
+- Compare timeline cue/overlap positions with the exported audio. Source waveforms are sampled approximations, not a post-FX waveform.
+- Repeatedly preview and stop using touch and buttons. Check the playhead animates while audio remains clear; playback now uses a dedicated worker.
+- Browse more than ten songs using touch previous/next and verify the correct file is selected.
