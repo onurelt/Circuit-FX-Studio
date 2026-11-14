@@ -14,6 +14,12 @@ typedef struct {
   uint32_t frames, offset;
 } Source;
 static int16_t ab[BLOCK * 2], bb[BLOCK * 2], mix[BLOCK * 2];
+static int16_t sample_block[BLOCK * 2];
+#ifdef HOST_TEST
+#define SAMPLE_ROOT "assets/sfx"
+#else
+#define SAMPLE_ROOT "app0:sfx"
+#endif
 static float echo[88200 * 2];
 static int16_t roll[44100 * 2];
 static uint32_t done, total;
@@ -114,7 +120,8 @@ int render_mix(const char *ap, const char *bp, const char *op,
     return fail("Invalid effect BPM or intensity.");
   double seconds = cfg->duration;
   unsigned effects = cfg->effects;
-  Source a = {0}, b = {0};
+  Source a = {0}, b = {0}, sample = {0};
+  uint32_t sample_start = 0, sample_count = 0;
   FILE *out = 0;
   int rc = -1;
   render_error[0] = 0;
@@ -142,6 +149,24 @@ int render_mix(const char *ap, const char *bp, const char *op,
       (uint64_t)cue + overlap > b.frames) {
     fail("Cue plus duration exceeds a song. Move cue earlier.");
     goto finish;
+  }
+  if (advanced && preset.sample_id) {
+    char path[96];
+    snprintf(path, sizeof(path), SAMPLE_ROOT "/%02d.wav", preset.sample_id);
+    if (open_source(&sample, path)) {
+      fail("Bundled WAV missing or damaged. Reinstall Beta 1.4.");
+      goto finish;
+    }
+    sample_count = sample.frames < overlap ? sample.frames : overlap;
+    int riser = preset.sample_id >= 9 && preset.sample_id <= 12;
+    sample_start =
+        riser ? overlap - sample_count : (overlap - sample_count) / 2;
+    /* Preserve natural pitch. Short transitions use the end of risers;
+     * other sounds start from the beginning. Never loop a one-shot. */
+    if (seek_frame(&sample, riser ? sample.frames - sample_count : 0)) {
+      fail("Bundled WAV seek failed.");
+      goto finish;
+    }
   }
   uint32_t tail = b.frames - cue - overlap, start = 0;
   if (preview) {
@@ -210,6 +235,18 @@ int render_mix(const char *ap, const char *bp, const char *op,
     if (fread(ab, 4, n, a.f) != n || fread(bb, 4, n, b.f) != n) {
       fail("Input read failed during transition.");
       goto finish;
+    }
+    memset(sample_block, 0, sizeof(sample_block));
+    if (sample.f) {
+      uint32_t first = at > sample_start ? at : sample_start;
+      uint32_t last = at + n < sample_start + sample_count
+                          ? at + n
+                          : sample_start + sample_count;
+      if (last > first && fread(sample_block + (first - at) * 2, 4,
+                                last - first, sample.f) != last - first) {
+        fail("Bundled WAV read failed.");
+        goto finish;
+      }
     }
     for (uint32_t i = 0; i < n; i++) {
       float t = (float)(at + i) / (overlap - 1);
@@ -305,6 +342,15 @@ int render_mix(const char *ap, const char *bp, const char *op,
           x = x * (1 - wet) + delayed * wet;
         }
         float v = x * ga + y * gb + noise;
+        if (sample.f && at + i >= sample_start &&
+            at + i < sample_start + sample_count) {
+          uint32_t pos = at + i - sample_start;
+          /* 10 ms edges also protect cropped sounds from clicks. Headroom
+           * scales with volume so intensity zero is an exact clean blend. */
+          float edge = fminf(1, fminf(pos, sample_count - 1 - pos) / 441.f);
+          float level = .32f * strength * edge;
+          v = v * (1 - level) + sample_block[i * 2 + c] * level;
+        }
         mix[i * 2 + c] = (int16_t)lrintf(fmaxf(-32768, fminf(32767, v)));
       }
       echo_at = (echo_at + 1) % delay_frames;
@@ -329,6 +375,8 @@ finish:
     if (rc)
       remove(op);
   }
+  if (sample.f)
+    fclose(sample.f);
   if (a.f)
     fclose(a.f);
   if (b.f)

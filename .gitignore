@@ -6,3 +6,5 @@ __pycache__/
 /build-installfix/
 
 /build-dj/
+
+/build-wav/

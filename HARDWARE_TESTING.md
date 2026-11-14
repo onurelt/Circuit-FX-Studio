@@ -31,3 +31,12 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Preview and export the same settings; compare the transition segment. Verify endpoints and stereo behavior, particularly alternating echoes and source rolls.
 - Test a long 64-beat recipe with two long songs, cancel it, and replay/export afterward. Monitor for clipping, discontinuities, freezes and export speed.
 - Repeatedly stop preview and close the app via LiveArea. All new DSP still renders offline before playback.
+
+## Version 01.04 additions
+
+- Install over 01.03 using VitaShell and confirm BETA 1.4. Open the WAV FX tab; both pages must list 16 included sounds without extra files in ux0:data.
+- Without loading songs, audition all 16 with Square and touch. Stop/restart at least 20 times; verify both channels and clean exit afterward. Audition uses the WAV's parsed data offset and length, including non-44-byte headers.
+- Apply each sound and preview/export with songs. Verify whooshes center in the overlap and risers end with it; test 0%, 50%, 100% intensity and 0.1/2/8/30-second durations.
+- Toggle processing effects while a sampled preset is active. Verify preview and export include the sample and toggled processing; compare the rendered WAV on another device.
+- Confirm auditioning does not overwrite an existing mix preview or alter its export-ready state. Return from WAV auditions to Square replay on the dashboard.
+- Test PS/LiveArea close and suspend/resume after standalone sample auditions. No real hardware verification has been performed.

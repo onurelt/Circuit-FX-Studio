@@ -238,13 +238,15 @@ static int progress(uint32_t done, uint32_t total) {
 /* Audio owns its port and file on a worker; GUI never blocks the audio feed. */
 static atomic_int audio_stop, audio_done, audio_result;
 static atomic_uint audio_frames;
+static char audio_path[256];
+static uint32_t audio_offset, audio_length;
 static int audio_worker(SceSize args, void *argp) {
   (void)args;
   (void)argp;
   int result = -1, port = -1;
-  FILE *f = fopen(PREVIEW, "rb");
+  FILE *f = fopen(audio_path, "rb");
   static int16_t pcm[2][2048] __attribute__((aligned(64)));
-  if (!f || fseek(f, 44, SEEK_SET))
+  if (!f || fseek(f, audio_offset, SEEK_SET))
     goto finish;
   port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, 1024, 44100,
                              SCE_AUDIO_OUT_MODE_STEREO);
@@ -257,12 +259,16 @@ static int audio_worker(SceSize args, void *argp) {
     goto finish;
   result = 0;
   int index = 0;
+  uint32_t remaining = audio_length;
   while (!atomic_load(&audio_stop)) {
     memset(pcm[index], 0, sizeof(pcm[index]));
-    size_t n = fread(pcm[index], 4, 1024, f);
-    if (!n) {
-      if (ferror(f))
-        result = -1;
+    size_t count = remaining < 1024 ? remaining : 1024;
+    if (!count)
+      break;
+    size_t n = fread(pcm[index], 4, count, f);
+    remaining -= n;
+    if (n != count) {
+      result = -1;
       break;
     }
     if (sceAudioOutOutput(port, pcm[index]) < 0) {
@@ -283,10 +289,13 @@ finish:
   atomic_store(&audio_done, 1);
   return 0;
 }
-static int play(void) {
+static int play_file(const char *path) {
   uint32_t frames, offset;
-  if (inspect_wav(PREVIEW, &frames, &offset))
+  if (inspect_wav(path, &frames, &offset))
     return -1;
+  snprintf(audio_path, sizeof(audio_path), "%s", path);
+  audio_offset = offset;
+  audio_length = frames;
   view.preview_length = (double)frames / 44100;
   view.play_position = 0;
   view.playing = 1;
@@ -310,8 +319,9 @@ static int play(void) {
     view.play_position = (double)atomic_load(&audio_frames) / 44100;
     show();
     unsigned hit = buttons();
-    if ((hit & (SCE_CTRL_CIRCLE | SCE_CTRL_START)) ||
-        (touch_press() && ui_hit_test(touch_x, touch_y) == 10))
+    if ((hit & (SCE_CTRL_CIRCLE | SCE_CTRL_START | SCE_CTRL_SQUARE)) ||
+        (touch_press() &&
+         (view.preset_browser || ui_hit_test(touch_x, touch_y) == 10)))
       atomic_store(&audio_stop, 1);
     sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
   }
@@ -321,6 +331,7 @@ static int play(void) {
   view.play_position = 0;
   return atomic_load(&audio_result);
 }
+static int play(void) { return play_file(PREVIEW); }
 static void preview(void) {
   if (!view.songs[0] || !view.songs[1]) {
     message("Choose both songs first.");
@@ -398,20 +409,23 @@ static void export_mix(void) {
 }
 static void browse_presets(void) {
   view.preset_browser = 1;
-  view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 1;
+  view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 65;
   while (1) {
     show();
     unsigned h = buttons();
     int id = view.selected_preset, bank = (id - 1) / 16, local = (id - 1) % 16;
     if (touch_press()) {
       if (touch_y >= 115 && touch_y < 143 && touch_x >= 34 && touch_x < 934) {
-        int b = (touch_x - 34) / 225;
-        if (b < 4)
+        int b = (touch_x - 34) / 180;
+        if (b < BANK_COUNT)
           view.selected_preset = b * 16 + local + 1;
       } else if (touch_y >= 153 && touch_y < 433 && touch_x >= 34 &&
                  touch_x < 526) {
         int i = (touch_y - 153) / 35;
         view.selected_preset = bank * 16 + (local / 8) * 8 + i + 1;
+      } else if (bank == 4 && touch_y >= 337 && touch_y < 369 &&
+                 touch_x >= 555 && touch_x < 910) {
+        h |= SCE_CTRL_SQUARE;
       } else if (touch_y >= 446 && touch_y < 485) {
         if (touch_x >= 34 && touch_x < 274)
           h |= SCE_CTRL_RTRIGGER;
@@ -428,11 +442,20 @@ static void browse_presets(void) {
     if (h & SCE_CTRL_DOWN)
       view.selected_preset = bank * 16 + (local + 1) % 16 + 1;
     if (h & SCE_CTRL_LEFT)
-      view.selected_preset = ((bank + 3) % 4) * 16 + local + 1;
+      view.selected_preset =
+          ((bank + BANK_COUNT - 1) % BANK_COUNT) * 16 + local + 1;
     if (h & SCE_CTRL_RIGHT)
-      view.selected_preset = ((bank + 1) % 4) * 16 + local + 1;
+      view.selected_preset = ((bank + 1) % BANK_COUNT) * 16 + local + 1;
     if (h & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER))
       view.selected_preset = bank * 16 + (local + 8) % 16 + 1;
+    if ((h & SCE_CTRL_SQUARE) && bank == 4) {
+      char path[64];
+      snprintf(path, sizeof(path), "app0:sfx/%02d.wav", local + 1);
+      if (play_file(path))
+        message("Cannot play bundled WAV. Reinstall Beta 1.4.");
+      else
+        message("WAV audition finished. X applies it to your transition.");
+    }
     if (h & SCE_CTRL_CROSS) {
       TransitionPreset p;
       preset_get(view.selected_preset, &p);
@@ -538,7 +561,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.3 / 01.03\n");
+    fprintf(log, "Circuit FX Vita Beta 1.4 / 01.04\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {

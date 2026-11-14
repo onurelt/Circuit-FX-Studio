@@ -26,21 +26,21 @@ with tempfile.TemporaryDirectory() as directory:
  with wave.open(str(p/'a.wav'),'rb') as w:a=w.readframes(w.getnframes())
  with wave.open(str(p/'b.wav'),'rb') as w:b=w.readframes(w.getnframes())
  signatures=set()
- for id in range(1,65):
+ for id in range(1,81):
   data=render(id,f'{id}.wav')
   assert data[:rate*4]==a[:rate*4]
   assert data[int(2.5*rate)*4:]==b[2*rate*4:]
   assert data[rate*4:rate*4+4]==a[rate*4:rate*4+4],(id,'start boundary')
   assert data[int(2.5*rate-1)*4:int(2.5*rate)*4]==b[int(2*rate-1)*4:int(2*rate)*4],(id,'end boundary')
   signatures.add(hashlib.sha256(data).hexdigest())
-  if id in [8,10,14,16,30,46,64]:
+  if id in [8,10,14,16,30,46,64]+list(range(65,81)):
    assert render(id,f'{id}-again.wav',preview=1)==data,'preview must equal excerpt with deterministic FX'
    assert render(id,f'{id}-weak.wav',intensity=.2)!=data
  # Same duration and input: not merely duplicate names or duration variants.
- assert len(signatures)==64,len(signatures)
+ assert len(signatures)==80,len(signatures)
  for bpm in [60,200]:render(30,f'bpm{bpm}.wav',bpm=bpm)
- for id in [-1,65]:render(id,f'bad{id}.wav',ok=False)
+ for id in [-1,81]:render(id,f'bad{id}.wav',ok=False)
  for bpm in [0,59,201,'nan','inf']:render(1,'badbpm.wav',bpm=bpm,ok=False)
  for intensity in [-.1,1.1,'nan']:render(1,'badintensity.wav',intensity=intensity,ok=False)
  render(64,'cancel.wav',ok=False,cancel=True)
- print('PASS: all 64 recipes produce distinct audio; exact endpoints; preview identity; intensity; BPM boundaries; invalid settings; cancellation.')
+ print('PASS: all 80 presets produce distinct audio; exact endpoints; preview identity; intensity; BPM boundaries; invalid settings; cancellation.')

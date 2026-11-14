@@ -1,0 +1,82 @@
+[
+  {
+    "file": "01.wav",
+    "original": "DAEDAL_Whoosh_01_Fast.wav",
+    "sha256": "c737b3218789c07ee3f0b0c39083f6986505e24739ab66eda889d0ca431be0ee"
+  },
+  {
+    "file": "02.wav",
+    "original": "DAEDAL_Whoosh_02_Airy.wav",
+    "sha256": "e68eb625bd00a20fb949446692f5333ce6aa5b8156473d53feffee145c3df21e"
+  },
+  {
+    "file": "03.wav",
+    "original": "DAEDAL_Whoosh_03_Deep.wav",
+    "sha256": "e0ffd76eceac3d16a7548f6133c5ed221ca7f7c07ba64e4584b979e5f4397977"
+  },
+  {
+    "file": "04.wav",
+    "original": "DAEDAL_Whoosh_04_Whip.wav",
+    "sha256": "20ca8540a8f4edaa1edb571f6f8a26b2ec280ed075f510fcfb7a9b6796b39c76"
+  },
+  {
+    "file": "05.wav",
+    "original": "DAEDAL_Whoosh_05_Right_To_Left.wav",
+    "sha256": "5d33d4cefe69611864fb04c35aa4e1646264290d62122a8ab33778aa66612dc5"
+  },
+  {
+    "file": "06.wav",
+    "original": "DAEDAL_Whoosh_06_Long_Pass.wav",
+    "sha256": "5b7da0fa51c244265db750655a1face7f4c48e8289496994734b0336cccec815"
+  },
+  {
+    "file": "07.wav",
+    "original": "DAEDAL_Whoosh_07_Tight.wav",
+    "sha256": "81e36a764a037a68ca2dca043f453842b106ba4b540aac5c54d4632f4a225964"
+  },
+  {
+    "file": "08.wav",
+    "original": "DAEDAL_Whoosh_08_Wind_Swirl.wav",
+    "sha256": "b37ee19bbdceaeb0dedc26d4b17e228228e10c00e7511c410281669545e3645d"
+  },
+  {
+    "file": "09.wav",
+    "original": "DAEDAL_Riser_01_Tension_3s.wav",
+    "sha256": "72db68dbc2466a37ce352bdac1ed9474598306ae393b594101c5f51fd2073794"
+  },
+  {
+    "file": "10.wav",
+    "original": "DAEDAL_Riser_02_Big_5s.wav",
+    "sha256": "ef445c42ce0a655700a4b2557397f2f491cbefdf6bc2f68efc6c2144b83279ba"
+  },
+  {
+    "file": "11.wav",
+    "original": "DAEDAL_Riser_03_Air_Only_4s.wav",
+    "sha256": "fcad9404f90ddcb2b2b85e0e0234aa6c208fbc9c5929fe9826e814415661d494"
+  },
+  {
+    "file": "12.wav",
+    "original": "DAEDAL_Riser_04_Short_1s.wav",
+    "sha256": "cecac34dab5a0393bb48a7c5b3be67008f7b34ed933a1aabbd7c10b0a5c8ca37"
+  },
+  {
+    "file": "13.wav",
+    "original": "DAEDAL_Glitch_01.wav",
+    "sha256": "e7dc3e3657037c41f937158e9aa51e82186e015c63ea861ebbee49d78007a71e"
+  },
+  {
+    "file": "14.wav",
+    "original": "DAEDAL_Glitch_02.wav",
+    "sha256": "2c640d4c322a196875b338c251aeb3f69f8905e81b85485b070d1ac15d87a2b1"
+  },
+  {
+    "file": "15.wav",
+    "original": "DAEDAL_Glitch_03.wav",
+    "sha256": "7b5dbd18056558aa60ef843ce7207d9280d83fc749867d85266aea20ca931400"
+  },
+  {
+    "file": "16.wav",
+    "original": "DAEDAL_Glitch_04.wav",
+    "sha256": "bdcead6f4981c29a4d920923d36372a4212a5e6fee2af054d402489c08b92d27"
+  }
+]

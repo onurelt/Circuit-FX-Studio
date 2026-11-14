@@ -1,7 +1,7 @@
 #ifndef PRESETS_H
 #define PRESETS_H
-#define PRESET_COUNT 64
-#define BANK_COUNT 4
+#define PRESET_COUNT 80
+#define BANK_COUNT 5
 enum {
   MOD_HIGH_PASS = 1,
   MOD_GATE = 2,
@@ -15,6 +15,7 @@ typedef struct {
   char name[64];
   const char *description;
   int bank, beats;
+  int sample_id; /* 1..16 bundled WAV, zero = processing only */
   unsigned effects, mods;
   float curve, delay_beats, feedback, wet, filter_end, bass_pivot, cut_at,
       gate_beats, gate_depth, roll_beats, ring_hz, ring_mix, noise_mix;

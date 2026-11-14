@@ -4,7 +4,7 @@
 #include <string.h>
 const char *preset_banks[BANK_COUNT] = {
     "GSP-inspired", "Micky Friedmann-inspired", "Anne Louise-inspired",
-    "Erik Vilar-inspired"};
+    "Erik Vilar-inspired", "Bundled WAV FX"};
 /* Original recipes informed by genre descriptions, not transcribed DJ
  * techniques. 16 distinct constructions, tuned separately for each genre bank.
  */
@@ -52,6 +52,36 @@ int preset_get(int id, TransitionPreset *p) {
   int b = (id - 1) / 16, k = (id - 1) % 16;
   memset(p, 0, sizeof(*p));
   p->bank = b;
+  if (b == 4) {
+    static const char *sample_names[16] = {"Fast Whoosh",
+                                           "Airy Whoosh",
+                                           "Deep Whoosh",
+                                           "Whip Sweep",
+                                           "Right-to-Left Whoosh",
+                                           "Long Pass",
+                                           "Tight Whoosh",
+                                           "Wind Swirl",
+                                           "Tension Riser",
+                                           "Big Riser",
+                                           "Air Riser",
+                                           "Short Riser",
+                                           "Glitch Flick",
+                                           "Glitch Switch",
+                                           "Glitch Burst",
+                                           "Glitch Bridge"};
+    snprintf(p->name, sizeof(p->name), "%s", sample_names[k]);
+    p->description = "Actual bundled WAV layered over your songs. FX intensity "
+                     "sets its volume. No download needed.";
+    p->sample_id = k + 1;
+    p->beats = k >= 8 && k < 12 ? 16 : (k == 5 || k == 7 ? 8 : 4);
+    p->effects = FX_CROSSFADE;
+    p->curve = 1;
+    p->delay_beats = .25f;
+    p->filter_end = 220;
+    p->bass_pivot = p->cut_at = .5f;
+    p->roll_beats = 1;
+    return 0;
+  }
   snprintf(p->name, sizeof(p->name), "%s", names[b][k]);
   p->description = desc[k];
   p->beats = (b == 1 ? 32 : 16);

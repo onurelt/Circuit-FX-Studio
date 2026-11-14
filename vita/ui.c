@@ -159,7 +159,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.3", 70);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.4", 70);
   txt(733, 13, &small, MUTED, "OFFLINE  /  WAV STUDIO", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];
@@ -264,8 +264,8 @@ void ui_draw(uint32_t *pixels, const View *v) {
     toggle(484, y + 3, on);
   }
   panel(562, 331, 384, 109, 0, EDGE);
-  txt(575, 336, &small, WHITE, "TRANSITION LIBRARY / 64 RECIPES", 350);
-  const char *labels2[] = {"Browse DJ-inspired presets", "Effect BPM",
+  txt(575, 336, &small, WHITE, "16 WAV SOUNDS + 64 RECIPES", 350);
+  const char *labels2[] = {"Browse WAV sounds + presets", "Effect BPM",
                            "FX intensity"};
   for (int i = 0; i < 3; i++) {
     int y = 352 + i * 28;
@@ -342,22 +342,22 @@ void ui_draw(uint32_t *pixels, const View *v) {
   if (v->preset_browser) {
     dim();
     panel(16, 47, 928, 455, 1, PINK);
-    txt(34, 60, &title, WHITE, "DJ-inspired transition library", 690);
+    txt(34, 60, &title, WHITE, "WAV sounds + transition recipes", 690);
     txt(34, 91, &small, MUTED,
-        "Original recipes inspired by published genres. Not artist-made or "
-        "exact set recreations.",
+        "WAV FX: included audio. DJ tabs: genre-inspired recipes, not artist "
+        "recordings.",
         870);
-    int selected = v->selected_preset >= 1 && v->selected_preset <= 64
+    int selected = v->selected_preset >= 1 && v->selected_preset <= PRESET_COUNT
                        ? v->selected_preset
                        : 1;
     int bank = (selected - 1) / 16, page = ((selected - 1) % 16) / 8;
     const char *shortbanks[] = {"GSP", "Micky Friedmann", "Anne Louise",
-                                "Erik Vilar"};
-    for (int i = 0; i < 4; i++) {
-      roundbox(34 + i * 225, 115, 216, 28, 5,
+                                "Erik Vilar", "WAV FX"};
+    for (int i = 0; i < BANK_COUNT; i++) {
+      roundbox(34 + i * 180, 115, 172, 28, 5,
                i == bank ? RGB(77, 35, 102) : RGB(27, 37, 54), RGB(20, 28, 44));
-      txt(47 + i * 225, 119, &body, i == bank ? PINK : WHITE, shortbanks[i],
-          196);
+      txt(42 + i * 180, 119, &body, i == bank ? PINK : WHITE, shortbanks[i],
+          158);
     }
     for (int i = 0; i < 8; i++) {
       int id = bank * 16 + page * 8 + i + 1, y = 153 + i * 35;
@@ -401,7 +401,13 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(559, 310, &body, CYAN, s, 350);
     snprintf(s, sizeof(s), "Echo %.2f beat   Feedback %.0f%%", p.delay_beats,
              p.feedback * 100);
-    txt(559, 345, &small, MUTED, s, 350);
+    if (p.sample_id) {
+      roundbox(555, 337, 355, 32, 5, RGB(20, 85, 101), RGB(13, 52, 65));
+      txt(567, 344, &body, CYAN,
+          v->playing ? "Stop WAV / Circle" : "[] Listen WAV (no songs needed)",
+          330);
+    } else
+      txt(559, 345, &small, MUTED, s, 350);
     txt(559, 371, &small, MUTED, "Cues stay where you set them.", 350);
     txt(559, 392, &small, MUTED, "Duration fits the available audio.", 350);
     roundbox(34, 446, 240, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
@@ -496,7 +502,7 @@ int main(int argc, char **argv) {
   }
   if (argc > 1 && strcmp(argv[1], "presets") == 0) {
     v.preset_browser = 1;
-    v.selected_preset = 30;
+    v.selected_preset = 65;
   }
   ui_draw(p, &v);
   FILE *f = fopen("ui-preview.ppm", "wb");

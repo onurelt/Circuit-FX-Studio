@@ -2,6 +2,19 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.4 — actual bundled WAV sounds (01.04)
+
+Includes **16 real WAV sound effects** in the install package: eight whooshes, four risers, four electronic glitches. No separate effect download or songs are needed to audition them. These are DAEDAL CC0 effects, not recordings from the named DJs. The earlier 64 processing recipes remain available.
+
+1. Open **Browse WAV sounds + presets**, then the **WAV FX** tab (opens by default before selecting a preset).
+2. Select a sound and tap **Listen WAV** or press **Square** to hear it on its own. Circle, Square, START or a screen tap stops auditioning.
+3. Tap **Apply preset**, select your two songs and cues, then **Preview**. Use **FX intensity** to adjust the sample level (0% mutes it); toggle Echo Out, Filter Sweep, Bass Swap or Quick Cut to combine processing with the sample.
+4. **Export** writes the same sound into the finished WAV.
+
+Samples keep their natural pitch and speed. Whooshes/glitches are centered in the overlap; risers end at its end. When the overlap is shorter than a sample, the sample is cropped with short fades. Samples do not loop or time-stretch. One bundled sample can be active per transition. Standalone auditions play the original sample at full level; the mix uses a quieter maximum level with headroom for the songs.
+
+Source, license and file-by-file hashes: [assets/sfx/SOURCE.md](assets/sfx/SOURCE.md). The VPK contains all 16 WAVs and their license; package checks validate every hash and audio format. Hardware playback/install still needs Vita testing.
+
 ## Beta 1.3 — 64 DJ-inspired recipes (01.03)
 
 Open **Browse DJ-inspired presets** in the right panel. Four banks have 16 original recipes each: GSP, Micky Friedmann, Anne Louise, and Erik Vilar inspired. These are genre-informed designs, not exact artist techniques or endorsed presets. See [research and sources](docs/DJ_RESEARCH.md) and [all 64 recipes](docs/PRESET_CATALOG.md).

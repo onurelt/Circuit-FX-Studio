@@ -49,7 +49,7 @@ int main(void) {
   v.progress = -1;
   v.editing = v.browser = v.confirm = 0;
   ui_draw(memory + 1, &v);
-  for (int id = 1; id <= 64; id++) {
+  for (int id = 1; id <= PRESET_COUNT; id++) {
     v.preset_browser = 1;
     v.selected_preset = id;
     ui_draw(memory + 1, &v);

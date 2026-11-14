@@ -9,7 +9,17 @@ with zipfile.ZipFile(sys.argv[1]) as z:
  for i in range(count):
   keyoff,fmt,size,maxsize,valoff=struct.unpack_from('<HHIII',data,20+i*16)
   key=data[keys+keyoff:].split(b'\0')[0].decode();fields[key]=data[values+valoff:values+valoff+size].rstrip(b'\0')
- assert fields['TITLE_ID']==b'CFXS00001';assert fields['APP_VER']==b'01.03'
+ assert fields['TITLE_ID']==b'CFXS00001';assert fields['APP_VER']==b'01.04'
+ import io,wave,hashlib,json
+ manifest=json.loads(z.read('sfx/manifest.json'))
+ assert len(manifest)==16
+ for sample in manifest:
+  data=z.read('sfx/'+sample['file'])
+  assert hashlib.sha256(data).hexdigest()==sample['sha256']
+  with wave.open(io.BytesIO(data),'rb') as w:
+   assert (w.getnchannels(),w.getsampwidth(),w.getframerate())==(2,2,44100)
+   assert w.getnframes()>0
+ assert 'CC0' in z.read('sfx/LICENSE.txt').decode()
  ET.fromstring(z.read('sce_sys/livearea/contents/template.xml'))
  for f,size in [('sce_sys/icon0.png',(128,128)),('sce_sys/livearea/contents/bg.png',(840,500)),('sce_sys/livearea/contents/startup.png',(280,158))]:
   png=z.read(f);assert png[:8]==b'\x89PNG\r\n\x1a\n';assert struct.unpack_from('>II',png,16)==size;assert png[24]==8, f'{f}: Vita requires 8-bit PNG, got {png[24]}';assert png[25]==3
