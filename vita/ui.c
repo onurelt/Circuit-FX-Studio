@@ -159,7 +159,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.4", 70);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.5", 70);
   txt(733, 13, &small, MUTED, "OFFLINE  /  WAV STUDIO", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];
@@ -342,36 +342,37 @@ void ui_draw(uint32_t *pixels, const View *v) {
   if (v->preset_browser) {
     dim();
     panel(16, 47, 928, 455, 1, PINK);
-    txt(34, 60, &title, WHITE, "WAV sounds + transition recipes", 690);
+    txt(34, 60, &title, WHITE, "Transition effects and DJ styles", 690);
     txt(34, 91, &small, MUTED,
-        "WAV FX: included audio. DJ tabs: genre-inspired recipes, not artist "
-        "recordings.",
+        "WAV FX are real audio. DJ tabs are genre-inspired original recipes.",
         870);
     int selected = v->selected_preset >= 1 && v->selected_preset <= PRESET_COUNT
                        ? v->selected_preset
                        : 1;
     int bank = (selected - 1) / 16, page = ((selected - 1) % 16) / 8;
-    const char *shortbanks[] = {"GSP", "Micky Friedmann", "Anne Louise",
-                                "Erik Vilar", "WAV FX"};
+    const char *shortbanks[] = {"GSP",   "Micky F", "Anne L",   "Erik V",
+                                "WAV 1", "WAV 2",   "DJ Paulo", "Honey Dijon"};
     for (int i = 0; i < BANK_COUNT; i++) {
-      roundbox(34 + i * 180, 115, 172, 28, 5,
+      int tx = 34 + (i % 4) * 225, ty = 115 + (i / 4) * 29;
+      roundbox(tx, ty, 216, 26, 5,
                i == bank ? RGB(77, 35, 102) : RGB(27, 37, 54), RGB(20, 28, 44));
-      txt(42 + i * 180, 119, &body, i == bank ? PINK : WHITE, shortbanks[i],
-          158);
+      txt(tx + 12, ty + 3, &body, i == bank ? PINK : WHITE, shortbanks[i], 190);
     }
     for (int i = 0; i < 8; i++) {
-      int id = bank * 16 + page * 8 + i + 1, y = 153 + i * 35;
+      int id = bank * 16 + page * 8 + i + 1, y = 180 + i * 31;
+      if (id > PRESET_COUNT)
+        continue;
       TransitionPreset p;
       preset_get(id, &p);
-      roundbox(34, y, 492, 32, 5,
+      roundbox(34, y, 492, 28, 5,
                id == selected ? RGB(23, 77, 93) : RGB(25, 34, 49),
                RGB(18, 27, 41));
       snprintf(s, sizeof(s), "%02d   %s", id, p.name);
-      txt(47, y + 5, &body, id == selected ? CYAN : WHITE, s, 460);
+      txt(47, y + 3, &body, id == selected ? CYAN : WHITE, s, 460);
     }
     TransitionPreset p;
     preset_get(selected, &p);
-    panel(544, 153, 382, 277, 0, EDGE);
+    panel(544, 180, 382, 250, 0, EDGE);
     txt(559, 165, &small, PINK, preset_banks[bank], 350);
     txt(559, 191, &title, WHITE, p.name, 350);
     /* Wrap description into bounded lines without splitting UTF-8 (ASCII
@@ -408,8 +409,19 @@ void ui_draw(uint32_t *pixels, const View *v) {
           330);
     } else
       txt(559, 345, &small, MUTED, s, 350);
-    txt(559, 371, &small, MUTED, "Cues stay where you set them.", 350);
-    txt(559, 392, &small, MUTED, "Duration fits the available audio.", 350);
+    if (p.sample_id) {
+      snprintf(s, sizeof(s), "Reverse: %s  /  touch to toggle",
+               v->settings.sample_reverse ? "ON" : "OFF");
+      roundbox(555, 374, 355, 29, 5, RGB(31, 39, 58), RGB(20, 28, 44));
+      txt(567, 379, &body, v->settings.sample_reverse ? PINK : WHITE, s, 330);
+      snprintf(s, sizeof(s), "Speed  -       %.1fx       +",
+               v->settings.sample_speed);
+      roundbox(555, 406, 355, 22, 5, RGB(31, 39, 58), RGB(20, 28, 44));
+      txt(567, 407, &small, CYAN, s, 330);
+    } else {
+      txt(559, 371, &small, MUTED, "Cues stay where you set them.", 350);
+      txt(559, 392, &small, MUTED, "Duration fits the available audio.", 350);
+    }
     roundbox(34, 446, 240, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
     snprintf(s, sizeof(s), "Page %d / 2   < L / R >", page + 1);
     txt(52, 455, &body, WHITE, s, 219);
@@ -472,6 +484,7 @@ int main(int argc, char **argv) {
   v.lengths[1] = 420;
   v.settings.bpm = 128;
   v.settings.intensity = 1;
+  v.settings.sample_speed = 1.f;
   v.row = 10;
   v.ready = 1;
   snprintf(v.status, sizeof(v.status),

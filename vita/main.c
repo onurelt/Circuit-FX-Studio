@@ -239,7 +239,9 @@ static int progress(uint32_t done, uint32_t total) {
 static atomic_int audio_stop, audio_done, audio_result;
 static atomic_uint audio_frames;
 static char audio_path[256];
-static uint32_t audio_offset, audio_length;
+static uint32_t audio_offset, audio_length, audio_output_length;
+static int audio_sfx_mode;
+static int16_t audition_sfx[44100 * 12 * 2] __attribute__((aligned(64)));
 static int audio_worker(SceSize args, void *argp) {
   (void)args;
   (void)argp;
@@ -259,18 +261,39 @@ static int audio_worker(SceSize args, void *argp) {
     goto finish;
   result = 0;
   int index = 0;
-  uint32_t remaining = audio_length;
+  uint32_t remaining = audio_output_length;
   while (!atomic_load(&audio_stop)) {
     memset(pcm[index], 0, sizeof(pcm[index]));
     size_t count = remaining < 1024 ? remaining : 1024;
     if (!count)
       break;
-    size_t n = fread(pcm[index], 4, count, f);
-    remaining -= n;
-    if (n != count) {
-      result = -1;
-      break;
+    size_t n = count;
+    if (audio_sfx_mode) {
+      uint32_t output_at = atomic_load(&audio_frames);
+      for (size_t i = 0; i < n; ++i) {
+        float src = (output_at + i) * view.settings.sample_speed;
+        if (view.settings.sample_reverse)
+          src = (audio_length - 1) - src;
+        if (src < 0)
+          src = 0;
+        if (src > audio_length - 1)
+          src = audio_length - 1;
+        uint32_t lo = (uint32_t)src;
+        uint32_t hi = lo + 1 < audio_length ? lo + 1 : lo;
+        float frac = src - lo;
+        for (int ch = 0; ch < 2; ++ch)
+          pcm[index][i * 2 + ch] =
+              (int16_t)(audition_sfx[lo * 2 + ch] * (1 - frac) +
+                        audition_sfx[hi * 2 + ch] * frac);
+      }
+    } else {
+      n = fread(pcm[index], 4, count, f);
+      if (n != count) {
+        result = -1;
+        break;
+      }
     }
+    remaining -= n;
     if (sceAudioOutOutput(port, pcm[index]) < 0) {
       result = -1;
       break;
@@ -289,14 +312,30 @@ finish:
   atomic_store(&audio_done, 1);
   return 0;
 }
-static int play_file(const char *path) {
+static int play_file(const char *path, int transform_sfx) {
   uint32_t frames, offset;
   if (inspect_wav(path, &frames, &offset))
     return -1;
   snprintf(audio_path, sizeof(audio_path), "%s", path);
-  audio_offset = offset;
   audio_length = frames;
-  view.preview_length = (double)frames / 44100;
+  audio_offset = transform_sfx ? frames : offset;
+  audio_sfx_mode = transform_sfx;
+  audio_output_length =
+      transform_sfx ? (uint32_t)ceilf(frames / view.settings.sample_speed)
+                    : frames;
+  if (transform_sfx) {
+    if (frames > 44100u * 12u)
+      return -1;
+    FILE *sfx = fopen(path, "rb");
+    if (!sfx || fseek(sfx, offset, SEEK_SET) ||
+        fread(audition_sfx, 4, frames, sfx) != frames) {
+      if (sfx)
+        fclose(sfx);
+      return -1;
+    }
+    fclose(sfx);
+  }
+  view.preview_length = (double)audio_output_length / 44100;
   view.play_position = 0;
   view.playing = 1;
   atomic_store(&audio_stop, 0);
@@ -331,7 +370,7 @@ static int play_file(const char *path) {
   view.play_position = 0;
   return atomic_load(&audio_result);
 }
-static int play(void) { return play_file(PREVIEW); }
+static int play(void) { return play_file(PREVIEW, 0); }
 static void preview(void) {
   if (!view.songs[0] || !view.songs[1]) {
     message("Choose both songs first.");
@@ -414,18 +453,36 @@ static void browse_presets(void) {
     show();
     unsigned h = buttons();
     int id = view.selected_preset, bank = (id - 1) / 16, local = (id - 1) % 16;
+    int sample_setting_changed = 0;
     if (touch_press()) {
-      if (touch_y >= 115 && touch_y < 143 && touch_x >= 34 && touch_x < 934) {
-        int b = (touch_x - 34) / 180;
-        if (b < BANK_COUNT)
+      if (touch_y >= 115 && touch_y < 172 && touch_x >= 34 && touch_x < 934) {
+        int row = (touch_y - 115) / 29;
+        int b = row * 4 + (touch_x - 34) / 225;
+        if (b < BANK_COUNT) {
+          if (b == 5 && local > 8)
+            local = 8;
           view.selected_preset = b * 16 + local + 1;
-      } else if (touch_y >= 153 && touch_y < 433 && touch_x >= 34 &&
+        }
+      } else if (touch_y >= 180 && touch_y < 430 && touch_x >= 34 &&
                  touch_x < 526) {
-        int i = (touch_y - 153) / 35;
+        int i = (touch_y - 180) / 31;
         view.selected_preset = bank * 16 + (local / 8) * 8 + i + 1;
-      } else if (bank == 4 && touch_y >= 337 && touch_y < 369 &&
+      } else if (bank >= 4 && touch_y >= 337 && touch_y < 369 &&
                  touch_x >= 555 && touch_x < 910) {
         h |= SCE_CTRL_SQUARE;
+      } else if (bank >= 4 && touch_y >= 374 && touch_y < 403 &&
+                 touch_x >= 555 && touch_x < 910) {
+        view.settings.sample_reverse = !view.settings.sample_reverse;
+        sample_setting_changed = 1;
+      } else if (bank >= 4 && touch_y >= 403 && touch_y < 431 &&
+                 touch_x >= 555 && touch_x < 910) {
+        view.settings.sample_speed =
+            roundf((view.settings.sample_speed + (touch_x < 730 ? -.1f : .1f)) *
+                   10.f) /
+            10.f;
+        view.settings.sample_speed =
+            fmaxf(.5f, fminf(2.f, view.settings.sample_speed));
+        sample_setting_changed = 1;
       } else if (touch_y >= 446 && touch_y < 485) {
         if (touch_x >= 34 && touch_x < 274)
           h |= SCE_CTRL_RTRIGGER;
@@ -437,24 +494,37 @@ static void browse_presets(void) {
     }
     if (h & SCE_CTRL_CIRCLE)
       break;
+    int slots = 16;
     if (h & SCE_CTRL_UP)
-      view.selected_preset = bank * 16 + (local + 15) % 16 + 1;
+      view.selected_preset = bank * 16 + (local + slots - 1) % slots + 1;
     if (h & SCE_CTRL_DOWN)
-      view.selected_preset = bank * 16 + (local + 1) % 16 + 1;
-    if (h & SCE_CTRL_LEFT)
+      view.selected_preset = bank * 16 + (local + 1) % slots + 1;
+    if (h & SCE_CTRL_LEFT) {
+      int target = (bank + BANK_COUNT - 1) % BANK_COUNT;
       view.selected_preset =
-          ((bank + BANK_COUNT - 1) % BANK_COUNT) * 16 + local + 1;
-    if (h & SCE_CTRL_RIGHT)
-      view.selected_preset = ((bank + 1) % BANK_COUNT) * 16 + local + 1;
+          target * 16 + (target == 5 && local > 8 ? 8 : local) + 1;
+    }
+    if (h & SCE_CTRL_RIGHT) {
+      int target = (bank + 1) % BANK_COUNT;
+      view.selected_preset =
+          target * 16 + (target == 5 && local > 8 ? 8 : local) + 1;
+    }
     if (h & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER))
       view.selected_preset = bank * 16 + (local + 8) % 16 + 1;
-    if ((h & SCE_CTRL_SQUARE) && bank == 4) {
+    if (sample_setting_changed)
+      message("Reverse and speed apply to WAV audition, preview and export.");
+    if ((h & SCE_CTRL_SQUARE) && bank >= 4) {
       char path[64];
-      snprintf(path, sizeof(path), "app0:sfx/%02d.wav", local + 1);
-      if (play_file(path))
-        message("Cannot play bundled WAV. Reinstall Beta 1.4.");
+      TransitionPreset selected;
+      if (preset_get(view.selected_preset, &selected)) {
+        message("This WAV preset is invalid.");
+        continue;
+      }
+      snprintf(path, sizeof(path), "app0:sfx/%02d.wav", selected.sample_id);
+      if (!selected.sample_id || play_file(path, 1))
+        message("Cannot play bundled WAV. Reinstall Beta 1.5.");
       else
-        message("WAV audition finished. X applies it to your transition.");
+        message("WAV audition finished. Settings apply to audition and mix.");
     }
     if (h & SCE_CTRL_CROSS) {
       TransitionPreset p;
@@ -471,6 +541,11 @@ static void browse_presets(void) {
       }
       view.settings.preset_id = view.selected_preset;
       view.settings.effects = p.effects;
+      if (p.reset_sample_settings) {
+        view.settings.sample_reverse = p.default_reverse;
+        view.settings.sample_speed =
+            p.default_speed > 0 ? p.default_speed : 1.f;
+      }
       view.settings.duration = floor(fmin(duration, available) * 1000) / 1000;
       invalidate();
       char status[180];
@@ -561,7 +636,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.4 / 01.04\n");
+    fprintf(log, "Circuit FX Vita Beta 1.5 / 01.05\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {
@@ -579,8 +654,12 @@ int main(void) {
   sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
                            SCE_TOUCH_SAMPLING_STATE_START);
   view.progress = -1;
-  view.settings = (MixSettings){
-      .start_a = 0, .start_b = 0, .duration = 15, .effects = FX_CROSSFADE};
+  view.settings = (MixSettings){.start_a = 0,
+                                .start_b = 0,
+                                .duration = 15,
+                                .effects = FX_CROSSFADE,
+                                .sample_speed = 1.f,
+                                .sample_reverse = 0};
   view.settings.bpm = 128;
   view.settings.intensity = 1;
   scan();

@@ -68,3 +68,23 @@ All durations below are recommendations at 128 BPM, not claims about the DJs' ac
 | 62 | Erik Vilar-inspired | Electronic Whoosh | 32 | 15.000 |
 | 63 | Erik Vilar-inspired | Deep Bass Tunnel | 16 | 7.500 |
 | 64 | Erik Vilar-inspired | Peak Pressure | 16 | 7.500 |
+
+## WAV effects 65–96
+
+The first two banks provide 25 source WAVs. The second tab also contains seven presets that layer a reverse playback and Echo Out over selected included sounds.
+
+| IDs | Contents |
+|---|---|
+| 65–72 | Eight whooshes |
+| 73–78 | Six risers |
+| 79–84 | Six glitches |
+| 85–89 | Five impacts |
+| 90–96 | Seven reverse and echo combinations |
+
+## DJ Paulo-inspired 97–112
+
+Sixteen original circuit-house recipes guided by published notes about Paulo's vocal, tribal and classic-rework style. The exact effects are original design choices.
+
+## Honey Dijon-inspired 113–128
+
+Sixteen original house recipes guided by published accounts of Honey Dijon's Chicago-house roots and queer-club background. The exact effects are original design choices.

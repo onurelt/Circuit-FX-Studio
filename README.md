@@ -2,18 +2,19 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
-## Beta 1.4 — actual bundled WAV sounds (01.04)
+## Beta 1.5 — 25 real WAV effects and 128 transition recipes (01.05)
 
-Includes **16 real WAV sound effects** in the install package: eight whooshes, four risers, four electronic glitches. No separate effect download or songs are needed to audition them. These are DAEDAL CC0 effects, not recordings from the named DJs. The earlier 64 processing recipes remain available.
+The **WAV FX** tabs include 25 one-shot sounds: 8 whooshes, 6 risers, 6 glitches, and 5 impacts. You can listen to them on their own with no songs loaded, then add one to your two-song transition. The package includes the actual audio; no separate sample download is needed.
 
-1. Open **Browse WAV sounds + presets**, then the **WAV FX** tab (opens by default before selecting a preset).
-2. Select a sound and tap **Listen WAV** or press **Square** to hear it on its own. Circle, Square, START or a screen tap stops auditioning.
-3. Tap **Apply preset**, select your two songs and cues, then **Preview**. Use **FX intensity** to adjust the sample level (0% mutes it); toggle Echo Out, Filter Sweep, Bass Swap or Quick Cut to combine processing with the sample.
-4. **Export** writes the same sound into the finished WAV.
+- Touch **Browse WAV sounds + presets**, then one of the **WAV 1 / WAV 2** tabs. **Listen WAV** or Square auditions it; Circle, START or a touch stops it.
+- Tap **Reverse** to reverse the selected effect. Touch **− / +** to change its speed from 0.5× through 2.0× in 0.1 steps. Speed changes pitch and duration. The audition, rendered preview and WAV export use the same direction and speed.
+- Touch **Apply preset** to use the effect with your songs. Effects combine with Echo Out, Filter Sweep, Bass Swap and Quick Cut. FX intensity adjusts the sampled sound level.
+- Whooshes, glitches and impacts sit in the middle of the overlap; risers land on its end. When a sound is too long, the app crops it and fades the edge. Slow playback stretches it naturally, and fast playback shortens it; no pitch-preserving time stretch is claimed.
+- DAEDAL's CC0 pack supplies the actual audio files. It contains no recordings of the DJs. [Source, license and file hashes](assets/sfx/SOURCE.md).
 
-Samples keep their natural pitch and speed. Whooshes/glitches are centered in the overlap; risers end at its end. When the overlap is shorter than a sample, the sample is cropped with short fades. Samples do not loop or time-stretch. One bundled sample can be active per transition. Standalone auditions play the original sample at full level; the mix uses a quieter maximum level with headroom for the songs.
+The four existing genre-informed DJ banks remain, and two researched recipe banks were added: **DJ Paulo** and **Honey Dijon**. Paulo is described as gay by the Washington Blade. Honey Dijon is a trans, queer house DJ; I describe her this way rather than labeling her gay. Each bank has original recipes inspired by published genre and artist context. The effect chain values are our design choices, not claims about these DJs' exact mixes or settings. See [research and sources](docs/DJ_RESEARCH.md) and [the recipe catalog](docs/PRESET_CATALOG.md).
 
-Source, license and file-by-file hashes: [assets/sfx/SOURCE.md](assets/sfx/SOURCE.md). The VPK contains all 16 WAVs and their license; package checks validate every hash and audio format. Hardware playback/install still needs Vita testing.
+Real Vita hardware is still needed to verify touchscreen controls, sample audition quality and install/upgrade behavior. See the [hardware checklist](HARDWARE_TESTING.md).
 
 ## Beta 1.3 — 64 DJ-inspired recipes (01.03)
 

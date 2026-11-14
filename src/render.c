@@ -14,7 +14,8 @@ typedef struct {
   uint32_t frames, offset;
 } Source;
 static int16_t ab[BLOCK * 2], bb[BLOCK * 2], mix[BLOCK * 2];
-static int16_t sample_block[BLOCK * 2];
+#define MAX_SFX_FRAMES (44100u * 12u)
+static int16_t sample_pcm[MAX_SFX_FRAMES * 2];
 #ifdef HOST_TEST
 #define SAMPLE_ROOT "assets/sfx"
 #else
@@ -114,6 +115,12 @@ int render_mix(const char *ap, const char *bp, const char *op,
        cfg->bpm < 60 || cfg->bpm > 200 || !isfinite(cfg->intensity) ||
        cfg->intensity < 0 || cfg->intensity > 1))
     return fail("Invalid preset, BPM or intensity.");
+  if (cfg->sample_speed != 0 &&
+      (!isfinite(cfg->sample_speed) || cfg->sample_speed < .5f ||
+       cfg->sample_speed > 2.f))
+    return fail("WAV effect speed must be 0.5x to 2.0x.");
+  if (cfg->sample_reverse != 0 && cfg->sample_reverse != 1)
+    return fail("Invalid WAV effect direction.");
   if (cfg->bpm != 0 &&
       (!isfinite(cfg->bpm) || cfg->bpm < 60 || cfg->bpm > 200 ||
        !isfinite(cfg->intensity) || cfg->intensity < 0 || cfg->intensity > 1))
@@ -150,23 +157,39 @@ int render_mix(const char *ap, const char *bp, const char *op,
     fail("Cue plus duration exceeds a song. Move cue earlier.");
     goto finish;
   }
+  float sample_speed = cfg->sample_speed >= .5f && cfg->sample_speed <= 2.f
+                           ? cfg->sample_speed
+                           : 1.f;
+  int sample_reverse = cfg->sample_reverse != 0;
+  int sample_riser = 0;
+  uint32_t source_count = 0, source_offset = 0;
   if (advanced && preset.sample_id) {
     char path[96];
     snprintf(path, sizeof(path), SAMPLE_ROOT "/%02d.wav", preset.sample_id);
     if (open_source(&sample, path)) {
-      fail("Bundled WAV missing or damaged. Reinstall Beta 1.4.");
+      fail("Bundled WAV missing or damaged. Reinstall Beta 1.5.");
       goto finish;
     }
-    sample_count = sample.frames < overlap ? sample.frames : overlap;
-    int riser = preset.sample_id >= 9 && preset.sample_id <= 12;
+    if (sample.frames > MAX_SFX_FRAMES) {
+      fail("Bundled WAV is too long to process.");
+      goto finish;
+    }
+    uint32_t max_source = (uint32_t)(overlap * sample_speed);
+    source_count = sample.frames < max_source ? sample.frames : max_source;
+    sample_riser = preset.sample_id >= 9 && preset.sample_id <= 14;
+    /* Short overlaps use a riser's ending segment so it resolves on the cut. */
+    if (sample_riser && sample.frames > source_count)
+      source_offset = sample.frames - source_count;
+    if (seek_frame(&sample, source_offset) ||
+        fread(sample_pcm, 4, source_count, sample.f) != source_count) {
+      fail("Bundled WAV read failed.");
+      goto finish;
+    }
+    sample_count = (uint32_t)ceilf(source_count / sample_speed);
+    if (sample_count > overlap)
+      sample_count = overlap;
     sample_start =
-        riser ? overlap - sample_count : (overlap - sample_count) / 2;
-    /* Preserve natural pitch. Short transitions use the end of risers;
-     * other sounds start from the beginning. Never loop a one-shot. */
-    if (seek_frame(&sample, riser ? sample.frames - sample_count : 0)) {
-      fail("Bundled WAV seek failed.");
-      goto finish;
-    }
+        sample_riser ? overlap - sample_count : (overlap - sample_count) / 2;
   }
   uint32_t tail = b.frames - cue - overlap, start = 0;
   if (preview) {
@@ -235,18 +258,6 @@ int render_mix(const char *ap, const char *bp, const char *op,
     if (fread(ab, 4, n, a.f) != n || fread(bb, 4, n, b.f) != n) {
       fail("Input read failed during transition.");
       goto finish;
-    }
-    memset(sample_block, 0, sizeof(sample_block));
-    if (sample.f) {
-      uint32_t first = at > sample_start ? at : sample_start;
-      uint32_t last = at + n < sample_start + sample_count
-                          ? at + n
-                          : sample_start + sample_count;
-      if (last > first && fread(sample_block + (first - at) * 2, 4,
-                                last - first, sample.f) != last - first) {
-        fail("Bundled WAV read failed.");
-        goto finish;
-      }
     }
     for (uint32_t i = 0; i < n; i++) {
       float t = (float)(at + i) / (overlap - 1);
@@ -349,7 +360,19 @@ int render_mix(const char *ap, const char *bp, const char *op,
            * scales with volume so intensity zero is an exact clean blend. */
           float edge = fminf(1, fminf(pos, sample_count - 1 - pos) / 441.f);
           float level = .32f * strength * edge;
-          v = v * (1 - level) + sample_block[i * 2 + c] * level;
+          float source_pos = pos * sample_speed;
+          if (sample_reverse)
+            source_pos = (source_count - 1) - source_pos;
+          if (source_pos < 0)
+            source_pos = 0;
+          if (source_pos > source_count - 1)
+            source_pos = source_count - 1;
+          uint32_t si = (uint32_t)source_pos;
+          uint32_t sj = si + 1 < source_count ? si + 1 : si;
+          float frac = source_pos - si;
+          float fx = sample_pcm[si * 2 + c] * (1 - frac) +
+                     sample_pcm[sj * 2 + c] * frac;
+          v = v * (1 - level) + fx * level;
         }
         mix[i * 2 + c] = (int16_t)lrintf(fmaxf(-32768, fminf(32767, v)));
       }
@@ -413,9 +436,17 @@ int main(int argc, char **argv) {
     c.preset_id = atoi(getenv("PRESET_TEST"));
     c.bpm = getenv("BPM_TEST") ? atof(getenv("BPM_TEST")) : 128;
     c.intensity = getenv("INTENSITY_TEST") ? atof(getenv("INTENSITY_TEST")) : 1;
+    c.sample_speed = getenv("SPEED_TEST") ? atof(getenv("SPEED_TEST")) : 1;
+    c.sample_reverse =
+        getenv("REVERSE_TEST") ? atoi(getenv("REVERSE_TEST")) : 0;
     TransitionPreset p;
-    if (!preset_get(c.preset_id, &p))
+    if (!preset_get(c.preset_id, &p)) {
       c.effects = p.effects;
+      if (p.reset_sample_settings) {
+        c.sample_reverse = p.default_reverse;
+        c.sample_speed = p.default_speed > 0 ? p.default_speed : 1.f;
+      }
+    }
   }
   int r = render_mix(argv[1], argv[2], argv[3], &c, atoi(argv[8]),
                      getenv("CANCEL_TEST") ? cancel_cb : 0);

@@ -12,7 +12,9 @@ typedef struct {
   double start_a, start_b, duration;
   unsigned effects;
   int preset_id;        /* zero = original manual FX */
-  float bpm, intensity; /* BPM times effects only; intensity 0..1 */
+  float bpm, intensity; /* BPM and effects only; intensity 0..1 */
+  float sample_speed;   /* 0.5..2.0; pitch follows speed */
+  int sample_reverse;   /* reverse bundled WAV transition sound */
 } MixSettings;
 typedef int (*Progress)(uint32_t done, uint32_t total);
 extern char render_error[160];

@@ -17,11 +17,23 @@ Sources consulted November 14, 2026:
 4. Anne Louise official profile hub: https://linktr.ee/djannelouise
 5. Erik Vilar promoter biography: https://masterbeat.com/dj-erik-vilar/
 
+| Bank | Published basis | Original recipe direction |
+|---|---|---|
+| DJ Paulo-inspired | Washington Blade identifies Paulo as gay and quotes his preference for energetic sets with new productions and vocals. A profile documents his international tribal-injected house and remix work. | Vocal handoffs, tribal-oriented rolls, classic-rework bridges and peak-time cuts. |
+| Honey Dijon-inspired | Interviews describe her queer identity and Chicago house roots; she discusses creating space through dance music. | Chicago-house grooves, warm bass exchanges, soulful echoes and club-focused releases. |
+
+Additional sources consulted November 14, 2026:
+
+6. DJ Paulo interview and circuit profile (Washington Blade): https://www.washingtonblade.com/2014/04/04/getting-spin/
+7. DJ Paulo international profile (GoPride Chicago): https://chicago.gopride.com/news/article.cfm/articleid/949329
+8. Honey Dijon interview (The Guardian): https://www.theguardian.com/music/2022/jun/24/dj-honey-dijon-dancefloors-do-what-religions-and-governments-cant
+9. Honey Dijon interview (COS): https://www.cos.com/en-ca/features/people/interview-honey-dijon-international-womens-day-ss22
+
 ## Evidence boundary
 
-These sources support genres and artistic context. They do **not** publish exact delay values, filter automation, transition cue points or effect chains. No audio set was downloaded, listened to or analyzed in this work. Every recipe, parameter, duration and name is an original design inference—not a transcription of a particular performance, artist preset, endorsement or claim that the artist uses this technique.
+These sources support genres and artistic context. They do **not** publish exact delay values, filter automation, transition cue points or effect chains. No audio set was downloaded, listened to or analyzed for the DJ-inspired recipes. Every recipe, parameter, duration and name is an original design inference—not a transcription of a particular performance, artist preset, endorsement or claim that the artist uses this technique.
 
-There are 64 original configurations across 16 construction types, tuned in four banks. This is not a claim of 64 unrelated DSP algorithms. Automated tests use identical source audio, cue times and durations and verify that every configuration generates different output.
+There are 96 genre-informed artist-inspired recipes across 16 construction types, in six DJ banks. The library also has 25 sampled WAV sounds and 7 reverse-plus-echo sample variants. This is not a claim of 64 unrelated DSP algorithms. Automated tests use identical source audio, cue times and durations and verify that every configuration generates different output.
 
 ## Sound engine additions
 
@@ -35,4 +47,4 @@ There are 64 original configurations across 16 construction types, tuned in four
 - Deterministic band-limited noise rises; generated noise is mixed at controlled levels.
 - Midpoint dip envelopes.
 
-The original five effect switches remain usable after choosing a recipe. Special recipe modifiers (ring, roll, gate, noise, dip and stereo feedback) remain active until another recipe is selected. FX intensity scales their amount. To remove those modifiers, select a simple blend recipe; no artist audio or drum samples are bundled.
+The original five effect switches remain usable after choosing a recipe. Special recipe modifiers (ring, roll, gate, noise, dip and stereo feedback) remain active until another recipe is selected. FX intensity scales their amount. To remove those modifiers, select a simple blend recipe; no artist audio is bundled. The DAEDAL CC0 pack includes one-shot transition effects; it contains no DJ recordings.

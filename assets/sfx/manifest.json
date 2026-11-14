@@ -61,22 +61,67 @@
   },
   {
     "file": "13.wav",
+    "original": "DAEDAL_Riser_05_Reverse_Cymbal_2s.wav",
+    "sha256": "0ab5f526a8f60e7f4d8ed28e513daba705584084ff1de377821c0c4e1bfb7d30"
+  },
+  {
+    "file": "14.wav",
+    "original": "DAEDAL_Riser_06_Reverse_Cymbal_4s.wav",
+    "sha256": "0e627f86d9bfcf18a0c3ecadaf06fdaecfef2fe7539f924abd01d0bef326ec24"
+  },
+  {
+    "file": "15.wav",
     "original": "DAEDAL_Glitch_01.wav",
     "sha256": "e7dc3e3657037c41f937158e9aa51e82186e015c63ea861ebbee49d78007a71e"
   },
   {
-    "file": "14.wav",
+    "file": "16.wav",
     "original": "DAEDAL_Glitch_02.wav",
     "sha256": "2c640d4c322a196875b338c251aeb3f69f8905e81b85485b070d1ac15d87a2b1"
   },
   {
-    "file": "15.wav",
+    "file": "17.wav",
     "original": "DAEDAL_Glitch_03.wav",
     "sha256": "7b5dbd18056558aa60ef843ce7207d9280d83fc749867d85266aea20ca931400"
   },
   {
-    "file": "16.wav",
+    "file": "18.wav",
     "original": "DAEDAL_Glitch_04.wav",
     "sha256": "bdcead6f4981c29a4d920923d36372a4212a5e6fee2af054d402489c08b92d27"
+  },
+  {
+    "file": "19.wav",
+    "original": "DAEDAL_Glitch_05.wav",
+    "sha256": "49838d37f2d07f6e625aff9957b3dd67158f5a455a44f6e2768c16b0d601bbb9"
+  },
+  {
+    "file": "20.wav",
+    "original": "DAEDAL_Glitch_06.wav",
+    "sha256": "5ca70777644bb5feae3f13e61b759ece2d475ab36098c0a155f2ad7aa2aac211"
+  },
+  {
+    "file": "21.wav",
+    "original": "DAEDAL_Impact_01_Cinematic_Boom.wav",
+    "sha256": "a0ebf02fcb10649df0844eeb3ef1ba6c96ea2b0f77575c523866825629be608f"
+  },
+  {
+    "file": "22.wav",
+    "original": "DAEDAL_Impact_02_Punch.wav",
+    "sha256": "baf1ec6fc40315bb42edcf0f92c93bf22717452b96b98a66fe53027bc028581d"
+  },
+  {
+    "file": "23.wav",
+    "original": "DAEDAL_Impact_03_Sub_Drop.wav",
+    "sha256": "e5dd83f86b81cffe0c64aab160fca4d09ba08cb58e1ca85378868035fadecccd"
+  },
+  {
+    "file": "24.wav",
+    "original": "DAEDAL_Impact_04_Hit_Tail.wav",
+    "sha256": "3213066f909bc8e48b6192a860118c46f643d5cdd0eaff560443dae0c466df84"
+  },
+  {
+    "file": "25.wav",
+    "original": "DAEDAL_Impact_05_Thud_Dry.wav",
+    "sha256": "1381f94bf06bc32b2db6c14fd897e73a4078bd5c61a564863edf310bf85cb071"
   }
 ]

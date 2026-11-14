@@ -40,3 +40,12 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Toggle processing effects while a sampled preset is active. Verify preview and export include the sample and toggled processing; compare the rendered WAV on another device.
 - Confirm auditioning does not overwrite an existing mix preview or alter its export-ready state. Return from WAV auditions to Square replay on the dashboard.
 - Test PS/LiveArea close and suspend/resume after standalone sample auditions. No real hardware verification has been performed.
+
+## Version 01.05 additions
+
+- Confirm all eight library tabs respond to touch; both WAV tabs list 25 sounds total, with no empty or invalid rows. Browse the DJ Paulo and Honey Dijon banks and apply recipes.
+- Audition each WAV at default speed; test reverse, speeds 0.5x, 1.0x, 1.5x, and 2.0x. Confirm audition playback duration and direction respond. Test repeated stop/replay.
+- For several sounds, compare audition, transition preview and exported WAV at forward/reverse and slow/fast settings. Try all five core effect combinations with sampled FX, 0/50/100% level, 0.1-second overlap and longer overlaps.
+- Check short riser overlaps use the riser's end so each resolves on the cut. Check whooshes/impacts/glitches stay centered in the overlap. Listen for clicks, audio-port release, latency and stutter.
+- The renderer uses bounded sample memory and linear resampling. Confirm export speed and system responsiveness on Vita, especially 0.5x and 2.0x, and after many consecutive auditions.
+- Install over 01.04 with VitaShell. Confirm VPK size, LiveArea launch and effect resources load from `app0:sfx`.

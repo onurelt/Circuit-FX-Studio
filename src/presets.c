@@ -1,14 +1,17 @@
 #include "presets.h"
 #include "render.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 const char *preset_banks[BANK_COUNT] = {
-    "GSP-inspired", "Micky Friedmann-inspired", "Anne Louise-inspired",
-    "Erik Vilar-inspired", "Bundled WAV FX"};
+    "GSP-inspired",         "Micky Friedmann-inspired",
+    "Anne Louise-inspired", "Erik Vilar-inspired",
+    "WAV FX (1-16)",        "WAV FX (17-25)",
+    "DJ Paulo-inspired",    "Honey Dijon-inspired"};
 /* Original recipes informed by genre descriptions, not transcribed DJ
  * techniques. 16 distinct constructions, tuned separately for each genre bank.
  */
-static const char *names[4][16] = {
+static const char *names[6][16] = {
     {"Vocal Glide", "Tribal Bass Relay", "Quarter Echo", "Dotted Vocal Trail",
      "Tech Filter Lift", "Clean Drop Cut", "Progressive Dip",
      "Stereo Echo Bridge", "Pulse Handoff", "One Beat Roll", "Tight Roll Exit",
@@ -28,7 +31,16 @@ static const char *names[4][16] = {
      "Tech Pressure", "Sharp Drop Cut", "Deep Reset", "Wide Driving Echo",
      "Tech Gate", "Driving Roll", "Fast Roll Cut", "Metallic Pressure",
      "Pressure Sweep", "Electronic Whoosh", "Deep Bass Tunnel",
-     "Peak Pressure"}};
+     "Peak Pressure"},
+    {"Paulo Vocal Lift", "Tribal Roller", "Paulo Echo Tail", "Classic Rework",
+     "Percussion Filter", "Peak Hour Cut", "Vocal Bridge", "Wide Club Echo",
+     "Groove Gate", "Tribal Roll", "Fast Floor Cut", "Bright Riser",
+     "Percussive Sweep", "Classic Whoosh", "Sub Exchange",
+     "Dancefloor Release"},
+    {"Chicago House Glide", "Jackin Bass Pass", "Dijon Echo", "Soulful Trail",
+     "Dusty Filter Lift", "Disco Cut", "House Breakdown", "Wide Room Echo",
+     "Four Floor Pulse", "House Roll", "Quick Disco Cut", "Warm Riser",
+     "Vinyl Air Sweep", "Shimmer Whoosh", "Low-End Lift", "Club Release"}};
 static const char *desc[16] = {
     "Curved blend; keeps the handoff smooth.",
     "Bass exchange with a shaped crossfade.",
@@ -52,8 +64,8 @@ int preset_get(int id, TransitionPreset *p) {
   int b = (id - 1) / 16, k = (id - 1) % 16;
   memset(p, 0, sizeof(*p));
   p->bank = b;
-  if (b == 4) {
-    static const char *sample_names[16] = {"Fast Whoosh",
+  if (b == 4 || b == 5) {
+    static const char *sample_names[25] = {"Fast Whoosh",
                                            "Airy Whoosh",
                                            "Deep Whoosh",
                                            "Whip Sweep",
@@ -65,16 +77,43 @@ int preset_get(int id, TransitionPreset *p) {
                                            "Big Riser",
                                            "Air Riser",
                                            "Short Riser",
+                                           "Reverse Cymbal (2s)",
+                                           "Reverse Cymbal (4s)",
                                            "Glitch Flick",
                                            "Glitch Switch",
                                            "Glitch Burst",
-                                           "Glitch Bridge"};
-    snprintf(p->name, sizeof(p->name), "%s", sample_names[k]);
-    p->description = "Actual bundled WAV layered over your songs. FX intensity "
-                     "sets its volume. No download needed.";
-    p->sample_id = k + 1;
-    p->beats = k >= 8 && k < 12 ? 16 : (k == 5 || k == 7 ? 8 : 4);
-    p->effects = FX_CROSSFADE;
+                                           "Glitch Bridge",
+                                           "Glitch Stutter",
+                                           "Glitch Snap",
+                                           "Cinematic Boom",
+                                           "Punch Impact",
+                                           "Sub Drop",
+                                           "Hit Tail",
+                                           "Dry Thud"};
+    static const char *reverse_names[7] = {
+        "Glitch Burst Reverse",  "Glitch Bridge Reverse",
+        "Glitch Stutter Reverse", "Glitch Snap Reverse",
+        "Cinematic Boom Reverse", "Dry Thud Reverse", "Sub Drop Reverse"};
+    static const int reverse_samples[7] = {17, 18, 19, 20, 21, 25, 23};
+    int sample = (b - 4) * 16 + k + 1;
+    if (b == 5 && k >= 9) {
+      p->name[0] = 0;
+      snprintf(p->name, sizeof(p->name), "%s", reverse_names[k - 9]);
+      sample = reverse_samples[k - 9];
+      p->reset_sample_settings = 1;
+      p->default_reverse = 1;
+    } else {
+      if (sample > 25)
+        return -1;
+      snprintf(p->name, sizeof(p->name), "%s", sample_names[sample - 1]);
+    }
+    p->description =
+        "WAV sound layered over your songs. Reverse and speed controls affect "
+        "audition, preview and export.";
+    p->sample_id = sample;
+    p->beats =
+        sample >= 9 && sample <= 14 ? 16 : (sample == 6 || sample == 8 ? 8 : 4);
+    p->effects = FX_CROSSFADE | ((b == 5 && k >= 9) ? FX_ECHO : 0);
     p->curve = 1;
     p->delay_beats = .25f;
     p->filter_end = 220;
@@ -82,26 +121,45 @@ int preset_get(int id, TransitionPreset *p) {
     p->roll_beats = 1;
     return 0;
   }
-  snprintf(p->name, sizeof(p->name), "%s", names[b][k]);
-  p->description = desc[k];
-  p->beats = (b == 1 ? 32 : 16);
+  int style = b >= 6 ? b - 6 : b;
+  snprintf(p->name, sizeof(p->name), "%s", names[b < 4 ? b : style + 4][k]);
+  if (b >= 6)
+    p->description = b == 6
+                         ? "Original circuit-house recipe guided by DJ Paulo's "
+                           "published vocal, tribal and classic-rework style."
+                         : "Original house recipe guided by Honey Dijon’s "
+                           "Chicago house and queer-club background.";
+  else
+    p->description = desc[k];
+  p->beats = (style == 1 ? 32 : 16);
   p->effects = FX_CROSSFADE;
-  p->curve = (float[]){1.15f, 1.7f, .8f, 1.35f}[b];
-  p->delay_beats = (float[]){.5f, 1.f, .75f, .25f}[b];
-  p->feedback = .24f + .055f * b;
-  p->wet = .28f + .035f * b;
-  p->filter_end = 240 + 110 * b;
-  p->bass_pivot = .40f + .06f * b;
-  p->cut_at = .6f + .08f * b;
-  p->gate_beats = (float[]){.5f, 1.f, .5f, .25f}[b];
-  p->gate_depth = .55f + .08f * b;
+  p->curve = (float[]){1.15f, 1.7f, .8f, 1.35f}[style];
+  p->delay_beats = (float[]){.5f, 1.f, .75f, .25f}[style];
+  p->feedback = .24f + .055f * style;
+  p->wet = .28f + .035f * style;
+  p->filter_end = 240 + 110 * style;
+  p->bass_pivot = .40f + .06f * style;
+  p->cut_at = .6f + .08f * style;
+  p->gate_beats = (float[]){.5f, 1.f, .5f, .25f}[style];
+  p->gate_depth = .55f + .08f * style;
   p->roll_beats = 1.f;
-  p->ring_hz = 180 + 80 * b;
-  p->ring_mix = .22f + .04f * b;
-  p->noise_mix = .07f + .012f * b;
+  p->ring_hz = 180 + 80 * style;
+  p->ring_mix = .22f + .04f * style;
+  p->noise_mix = .07f + .012f * style;
+  if (b >= 6) {
+    float factor = b == 6 ? 1.19f : .87f;
+    p->curve *= factor;
+    p->delay_beats *= b == 6 ? 1.35f : 1.2f;
+    p->feedback += b == 6 ? .045f : .07f;
+    p->wet += b == 6 ? .04f : .08f;
+    p->filter_end *= b == 6 ? 1.22f : .76f;
+    p->bass_pivot = fminf(.88f, p->bass_pivot + (b == 6 ? .09f : -.07f));
+  }
+  if (b >= 6)
+    p->effects |= FX_ECHO;
   switch (k) {
   case 0:
-    p->beats = b == 1 ? 64 : 32;
+    p->beats = style == 1 ? 64 : 32;
     break;
   case 1:
     p->effects |= FX_BASS_SWAP;
@@ -128,7 +186,7 @@ int preset_get(int id, TransitionPreset *p) {
   case 6:
     p->mods = MOD_DIP;
     p->effects |= FX_FILTER;
-    p->beats = b == 1 ? 64 : 32;
+    p->beats = style == 1 ? 64 : 32;
     break;
   case 7:
     p->effects |= FX_ECHO;
@@ -165,7 +223,7 @@ int preset_get(int id, TransitionPreset *p) {
   case 13:
     p->mods = MOD_RING | MOD_NOISE;
     p->effects |= FX_FILTER | FX_ECHO;
-    p->beats = b == 1 ? 64 : 32;
+    p->beats = style == 1 ? 64 : 32;
     break;
   case 14:
     p->effects |= FX_FILTER | FX_BASS_SWAP | FX_ECHO;
@@ -178,5 +236,7 @@ int preset_get(int id, TransitionPreset *p) {
     p->filter_end = 2400 + 300 * b;
     break;
   }
+  if (b >= 6)
+    p->effects |= FX_ECHO;
   return 0;
 }
