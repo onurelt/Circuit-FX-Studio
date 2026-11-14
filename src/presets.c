@@ -119,6 +119,11 @@ int preset_get(int id, TransitionPreset *p) {
     p->filter_end = 220;
     p->bass_pivot = p->cut_at = .5f;
     p->roll_beats = 1;
+    if (b == 5 && k >= 9) {
+      p->delay_beats = .5f;
+      p->feedback = .36f;
+      p->wet = .34f;
+    }
     return 0;
   }
   int style = b >= 6 ? b - 6 : b;
