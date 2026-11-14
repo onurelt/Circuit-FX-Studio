@@ -310,7 +310,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1 / 01.00\n");
+    fprintf(log, "Circuit FX Vita Beta 1 / 01.01\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {

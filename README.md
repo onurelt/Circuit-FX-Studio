@@ -2,6 +2,10 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Installation rebuild (01.01)
+
+The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebuild forces 8-bit indexed PNGs and checks both bit depth and color type in the final VPK. Physical Vita installation still requires confirmation.
+
 ## Install
 
 1. Copy `CircuitFX-Beta1.vpk` to your homebrew-enabled Vita and install with VitaShell.
