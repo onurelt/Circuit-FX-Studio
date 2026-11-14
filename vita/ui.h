@@ -1,5 +1,6 @@
 #ifndef UI_H
 #define UI_H
+#include "presets.h"
 #include "render.h"
 #include <stdint.h>
 #define TIMELINE_BINS 880
@@ -15,6 +16,7 @@ typedef struct {
   char status[180];
   unsigned short peaks[2][440], timeline[2][TIMELINE_BINS];
   double play_position, preview_length;
+  int preset_browser, selected_preset;
   int editing;
   char entry[20];
   char edit_error[90];

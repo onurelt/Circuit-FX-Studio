@@ -159,7 +159,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   wave_icon(19, 7, CYAN);
   txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
   roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.2", 70);
+  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.3", 70);
   txt(733, 13, &small, MUTED, "OFFLINE  /  WAV STUDIO", 211);
   rect(14, 40, 932, 1, EDGE);
   char s[180], a[32];
@@ -264,19 +264,22 @@ void ui_draw(uint32_t *pixels, const View *v) {
     toggle(484, y + 3, on);
   }
   panel(562, 331, 384, 109, 0, EDGE);
-  txt(575, 336, &small, WHITE, "QUICK VARIATIONS", 300);
-  const char *presets[] = {"Smooth Blend", "Echo Drift", "Filter + Cut"};
-  unsigned masks[] = {1, 3, 28};
+  txt(575, 336, &small, WHITE, "TRANSITION LIBRARY / 64 RECIPES", 350);
+  const char *labels2[] = {"Browse DJ-inspired presets", "Effect BPM",
+                           "FX intensity"};
   for (int i = 0; i < 3; i++) {
     int y = 352 + i * 28;
-    int chosen = v->settings.effects == masks[i];
     roundbox(570, y, 368, 26, 5,
              v->row == 12 + i ? RGB(46, 58, 80) : RGB(24, 31, 47),
              RGB(17, 24, 38));
-    if (chosen)
-      rect(570, y + 5, 3, 16, CYAN);
-    txt(584, y + 3, &body, chosen ? CYAN : WHITE, presets[i], 250);
-    txt(890, y + 6, &small, MUTED, "SET", 36);
+    txt(584, y + 3, &body, WHITE, labels2[i], 265);
+    if (i == 0)
+      snprintf(s, sizeof(s), "OPEN");
+    else if (i == 1)
+      snprintf(s, sizeof(s), "%.0f", v->settings.bpm);
+    else
+      snprintf(s, sizeof(s), "%.0f%%", v->settings.intensity * 100);
+    txt(879, y + 6, &small, CYAN, s, 52);
   }
   panel(562, 448, 184, 48, v->row == 10, CYAN);
   play_icon(577, 463, CYAN);
@@ -336,17 +339,96 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(88, 464, &small, MUTED, s, 620);
     txt(736, 464, &small, CYAN, "< PREV    NEXT >", 140);
   }
+  if (v->preset_browser) {
+    dim();
+    panel(16, 47, 928, 455, 1, PINK);
+    txt(34, 60, &title, WHITE, "DJ-inspired transition library", 690);
+    txt(34, 91, &small, MUTED,
+        "Original recipes inspired by published genres. Not artist-made or "
+        "exact set recreations.",
+        870);
+    int selected = v->selected_preset >= 1 && v->selected_preset <= 64
+                       ? v->selected_preset
+                       : 1;
+    int bank = (selected - 1) / 16, page = ((selected - 1) % 16) / 8;
+    const char *shortbanks[] = {"GSP", "Micky Friedmann", "Anne Louise",
+                                "Erik Vilar"};
+    for (int i = 0; i < 4; i++) {
+      roundbox(34 + i * 225, 115, 216, 28, 5,
+               i == bank ? RGB(77, 35, 102) : RGB(27, 37, 54), RGB(20, 28, 44));
+      txt(47 + i * 225, 119, &body, i == bank ? PINK : WHITE, shortbanks[i],
+          196);
+    }
+    for (int i = 0; i < 8; i++) {
+      int id = bank * 16 + page * 8 + i + 1, y = 153 + i * 35;
+      TransitionPreset p;
+      preset_get(id, &p);
+      roundbox(34, y, 492, 32, 5,
+               id == selected ? RGB(23, 77, 93) : RGB(25, 34, 49),
+               RGB(18, 27, 41));
+      snprintf(s, sizeof(s), "%02d   %s", id, p.name);
+      txt(47, y + 5, &body, id == selected ? CYAN : WHITE, s, 460);
+    }
+    TransitionPreset p;
+    preset_get(selected, &p);
+    panel(544, 153, 382, 277, 0, EDGE);
+    txt(559, 165, &small, PINK, preset_banks[bank], 350);
+    txt(559, 191, &title, WHITE, p.name, 350);
+    /* Wrap description into bounded lines without splitting UTF-8 (ASCII
+     * recipes). */
+    char line[46] = {0};
+    int pos = 0, y = 230;
+    const char *word = p.description;
+    while (*word) {
+      const char *end = strchr(word, ' ');
+      int n = end ? (int)(end - word) : (int)strlen(word);
+      if (pos + n + (pos ? 1 : 0) > 43) {
+        line[pos] = 0;
+        txt(559, y, &small, MUTED, line, 350);
+        y += 19;
+        pos = 0;
+      }
+      if (pos)
+        line[pos++] = ' ';
+      memcpy(line + pos, word, n);
+      pos += n;
+      word = end ? end + 1 : word + n;
+    }
+    line[pos] = 0;
+    txt(559, y, &small, MUTED, line, 350);
+    snprintf(s, sizeof(s), "%d beats  /  %.2f sec at %.0f BPM", p.beats,
+             p.beats * 60.0 / v->settings.bpm, v->settings.bpm);
+    txt(559, 310, &body, CYAN, s, 350);
+    snprintf(s, sizeof(s), "Echo %.2f beat   Feedback %.0f%%", p.delay_beats,
+             p.feedback * 100);
+    txt(559, 345, &small, MUTED, s, 350);
+    txt(559, 371, &small, MUTED, "Cues stay where you set them.", 350);
+    txt(559, 392, &small, MUTED, "Duration fits the available audio.", 350);
+    roundbox(34, 446, 240, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
+    snprintf(s, sizeof(s), "Page %d / 2   < L / R >", page + 1);
+    txt(52, 455, &body, WHITE, s, 219);
+    roundbox(544, 446, 170, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
+    txt(586, 455, &body, WHITE, "Cancel", 140);
+    roundbox(730, 446, 196, 39, 6, RGB(16, 116, 137), RGB(11, 64, 84));
+    txt(762, 455, &body, WHITE, "Apply preset", 158);
+  }
   if (v->editing) {
     dim();
     panel(238, 73, 484, 397, 1, CYAN);
     snprintf(s, sizeof(s), "Set %s",
              v->editing == 1   ? "Track A cue"
              : v->editing == 2 ? "Track B cue"
-                               : "transition duration");
+             : v->editing == 3 ? "transition duration"
+             : v->editing == 4 ? "effect BPM"
+                               : "FX intensity");
     txt(264, 88, &title, WHITE, s, 430);
     roundbox(264, 128, 432, 51, 6, RGB(9, 17, 29), RGB(12, 23, 37));
     txt(278, 137, &large, CYAN, v->entry, 330);
-    txt(617, 152, &small, MUTED, "seconds", 70);
+    txt(617, 152, &small, MUTED,
+        v->editing == 4   ? "BPM"
+        : v->editing == 5 ? "percent"
+                          : "seconds",
+        70);
     const char *keys[] = {"1", "2", "3", "4", "5", "6",
                           "7", "8", "9", ".", "0", "DEL"};
     for (int k = 0; k < 12; k++) {
@@ -360,7 +442,10 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(553, 401, &body, WHITE, "Apply", 120);
     txt(264, 443, &small, RGB(255, 160, 140),
         v->edit_error[0] ? v->edit_error
-                         : "Enter seconds, e.g. 155.250 = 02:35.250",
+        : v->editing == 4
+            ? "60-200 BPM; effects timing, not automatic beatmatching"
+        : v->editing == 5 ? "0-100%; controls effect strength, not track volume"
+                          : "Enter seconds, e.g. 155.250 = 02:35.250",
         430);
   }
 }
@@ -369,11 +454,18 @@ int main(int argc, char **argv) {
   uint32_t *p = calloc(960 * 544, 4);
   View v = {0};
   v.progress = -1;
-  v.settings = (MixSettings){155, 48, 15, 3};
+  v.settings = (MixSettings){.start_a = 155,
+                             .start_b = 48,
+                             .duration = 15,
+                             .effects = 3,
+                             .bpm = 128,
+                             .intensity = 1};
   v.songs[0] = "Neon Horizons.wav";
   v.songs[1] = "Midnight Circuit.wav";
   v.lengths[0] = 360;
   v.lengths[1] = 420;
+  v.settings.bpm = 128;
+  v.settings.intensity = 1;
   v.row = 10;
   v.ready = 1;
   snprintf(v.status, sizeof(v.status),
@@ -401,6 +493,10 @@ int main(int argc, char **argv) {
     v.entries[0] = "Neon Horizons.wav";
     v.entries[1] = "Midnight Circuit.wav";
     v.entries[2] = "Long song name - live set recording.wav";
+  }
+  if (argc > 1 && strcmp(argv[1], "presets") == 0) {
+    v.preset_browser = 1;
+    v.selected_preset = 30;
   }
   ui_draw(p, &v);
   FILE *f = fopen("ui-preview.ppm", "wb");

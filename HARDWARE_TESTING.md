@@ -23,3 +23,11 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Compare timeline cue/overlap positions with the exported audio. Source waveforms are sampled approximations, not a post-FX waveform.
 - Repeatedly preview and stop using touch and buttons. Check the playhead animates while audio remains clear; playback now uses a dedicated worker.
 - Browse more than ten songs using touch previous/next and verify the correct file is selected.
+
+## Version 01.03 additions
+
+- Browse all four banks, both pages, and apply presets by touch and D-pad. Verify cue positions are preserved and shortened durations are reported.
+- Audition a simple blend, stereo echo, gate, roll, high-pass lift, and ring/noise sweep. Test 0%, 50%, 100% intensity and 60/128/200 effect BPM. BPM must not change source-track pitch or playback speed.
+- Preview and export the same settings; compare the transition segment. Verify endpoints and stereo behavior, particularly alternating echoes and source rolls.
+- Test a long 64-beat recipe with two long songs, cancel it, and replay/export afterward. Monitor for clipping, discontinuities, freezes and export speed.
+- Repeatedly stop preview and close the app via LiveArea. All new DSP still renders offline before playback.

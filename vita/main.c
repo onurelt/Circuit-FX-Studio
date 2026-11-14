@@ -396,11 +396,76 @@ static void export_mix(void) {
     message(s);
   }
 }
+static void browse_presets(void) {
+  view.preset_browser = 1;
+  view.selected_preset = view.settings.preset_id ? view.settings.preset_id : 1;
+  while (1) {
+    show();
+    unsigned h = buttons();
+    int id = view.selected_preset, bank = (id - 1) / 16, local = (id - 1) % 16;
+    if (touch_press()) {
+      if (touch_y >= 115 && touch_y < 143 && touch_x >= 34 && touch_x < 934) {
+        int b = (touch_x - 34) / 225;
+        if (b < 4)
+          view.selected_preset = b * 16 + local + 1;
+      } else if (touch_y >= 153 && touch_y < 433 && touch_x >= 34 &&
+                 touch_x < 526) {
+        int i = (touch_y - 153) / 35;
+        view.selected_preset = bank * 16 + (local / 8) * 8 + i + 1;
+      } else if (touch_y >= 446 && touch_y < 485) {
+        if (touch_x >= 34 && touch_x < 274)
+          h |= SCE_CTRL_RTRIGGER;
+        else if (touch_x >= 544 && touch_x < 714)
+          h |= SCE_CTRL_CIRCLE;
+        else if (touch_x >= 730 && touch_x < 926)
+          h |= SCE_CTRL_CROSS;
+      }
+    }
+    if (h & SCE_CTRL_CIRCLE)
+      break;
+    if (h & SCE_CTRL_UP)
+      view.selected_preset = bank * 16 + (local + 15) % 16 + 1;
+    if (h & SCE_CTRL_DOWN)
+      view.selected_preset = bank * 16 + (local + 1) % 16 + 1;
+    if (h & SCE_CTRL_LEFT)
+      view.selected_preset = ((bank + 3) % 4) * 16 + local + 1;
+    if (h & SCE_CTRL_RIGHT)
+      view.selected_preset = ((bank + 1) % 4) * 16 + local + 1;
+    if (h & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER))
+      view.selected_preset = bank * 16 + (local + 8) % 16 + 1;
+    if (h & SCE_CTRL_CROSS) {
+      TransitionPreset p;
+      preset_get(view.selected_preset, &p);
+      double duration = p.beats * 60.0 / view.settings.bpm;
+      double available = 120;
+      if (view.songs[0])
+        available = fmin(available, view.lengths[0] - view.settings.start_a);
+      if (view.songs[1])
+        available = fmin(available, view.lengths[1] - view.settings.start_b);
+      if (available < .1) {
+        message("Move cues earlier before applying a preset.");
+        break;
+      }
+      view.settings.preset_id = view.selected_preset;
+      view.settings.effects = p.effects;
+      view.settings.duration = floor(fmin(duration, available) * 1000) / 1000;
+      invalidate();
+      char status[180];
+      snprintf(status, sizeof(status), "%s / %s%s", preset_banks[p.bank],
+               p.name, available < duration ? " (duration shortened)" : "");
+      message(status);
+      break;
+    }
+  }
+  view.preset_browser = 0;
+}
 static void edit_time(int row) {
-  double *value = row == 2   ? &view.settings.start_a
+  double extra = row == 13 ? view.settings.bpm : view.settings.intensity * 100;
+  double *value = row >= 13  ? &extra
+                  : row == 2 ? &view.settings.start_a
                   : row == 3 ? &view.settings.start_b
                              : &view.settings.duration;
-  view.editing = row - 1;
+  view.editing = row >= 13 ? row - 9 : row - 1;
   snprintf(view.entry, sizeof(view.entry), "%.3f", *value);
   view.edit_error[0] = 0;
   int fresh = 1;
@@ -436,17 +501,30 @@ static void edit_time(int row) {
     if ((h & SCE_CTRL_CROSS) || key == 13) {
       char *end;
       double number = strtod(view.entry, &end);
-      double max = row == 4 ? 120 : view.lengths[row - 2],
-             min = row == 4 ? .1 : 0;
+      double max = row == 13   ? 200
+                   : row == 14 ? 100
+                   : row == 4  ? 120
+                               : view.lengths[row - 2],
+             min = row == 13  ? 60
+                   : row == 4 ? .1
+                              : 0;
       if (!view.entry[0] || *end || !isfinite(number) || number < min ||
           number > max) {
         snprintf(view.edit_error, sizeof(view.edit_error),
-                 "Enter %.3f to %.3f seconds", min, max);
+                 "Enter %.3f to %.3f %s", min, max,
+                 row == 13   ? "BPM"
+                 : row == 14 ? "percent"
+                             : "seconds");
         continue;
       }
       *value = round(number * 1000) / 1000;
+      if (row == 13)
+        view.settings.bpm = extra;
+      else if (row == 14)
+        view.settings.intensity = extra / 100;
       invalidate();
-      message("Cue updated. Preview to hear your transition.");
+      message(row >= 13 ? "Effect settings updated. Preview to hear the change."
+                        : "Cue updated. Preview to hear your transition.");
       break;
     }
   }
@@ -460,7 +538,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 1.2 / 01.02\n");
+    fprintf(log, "Circuit FX Vita Beta 1.3 / 01.03\n");
     fclose(log);
   }
   for (int i = 0; i < 2; i++) {
@@ -478,7 +556,10 @@ int main(void) {
   sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
                            SCE_TOUCH_SAMPLING_STATE_START);
   view.progress = -1;
-  view.settings = (MixSettings){0, 0, 15, FX_CROSSFADE};
+  view.settings = (MixSettings){
+      .start_a = 0, .start_b = 0, .duration = 15, .effects = FX_CROSSFADE};
+  view.settings.bpm = 128;
+  view.settings.intensity = 1;
   scan();
   message("Choose two WAV songs. Triangle: exit safely.");
   while (1) {
@@ -528,13 +609,10 @@ int main(void) {
         preview();
       else if (view.row == 11)
         export_mix();
-      else if (view.row >= 12 && view.row <= 14) {
-        const unsigned masks[] = {FX_CROSSFADE, FX_CROSSFADE | FX_ECHO,
-                                  FX_FILTER | FX_BASS_SWAP | FX_QUICK_CUT};
-        view.settings.effects = masks[view.row - 12];
-        invalidate();
-        message("Variation selected. Preview to hear it.");
-      }
+      else if (view.row == 12)
+        browse_presets();
+      else if (view.row == 13 || view.row == 14)
+        edit_time(view.row);
     }
     if (hit & SCE_CTRL_START) { /* Clear the trigger edge before synchronous
                                    playback. */

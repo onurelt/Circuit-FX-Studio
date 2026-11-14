@@ -1,4 +1,5 @@
 #include "render.h"
+#include "presets.h"
 #include "wav.h"
 #include <limits.h>
 #include <math.h>
@@ -13,7 +14,8 @@ typedef struct {
   uint32_t frames, offset;
 } Source;
 static int16_t ab[BLOCK * 2], bb[BLOCK * 2], mix[BLOCK * 2];
-static float echo[11025 * 2];
+static float echo[88200 * 2];
+static int16_t roll[44100 * 2];
 static uint32_t done, total;
 static Progress progress;
 static int fail(const char *s) {
@@ -97,6 +99,19 @@ static int copy(Source *s, FILE *out, uint32_t start, uint32_t count) {
 }
 int render_mix(const char *ap, const char *bp, const char *op,
                const MixSettings *cfg, int preview, Progress cb) {
+  if (!cfg)
+    return fail("Missing transition settings.");
+  TransitionPreset preset;
+  int advanced = cfg->preset_id != 0;
+  if (advanced &&
+      (preset_get(cfg->preset_id, &preset) || !isfinite(cfg->bpm) ||
+       cfg->bpm < 60 || cfg->bpm > 200 || !isfinite(cfg->intensity) ||
+       cfg->intensity < 0 || cfg->intensity > 1))
+    return fail("Invalid preset, BPM or intensity.");
+  if (cfg->bpm != 0 &&
+      (!isfinite(cfg->bpm) || cfg->bpm < 60 || cfg->bpm > 200 ||
+       !isfinite(cfg->intensity) || cfg->intensity < 0 || cfg->intensity > 1))
+    return fail("Invalid effect BPM or intensity.");
   double seconds = cfg->duration;
   unsigned effects = cfg->effects;
   Source a = {0}, b = {0};
@@ -164,6 +179,30 @@ int render_mix(const char *ap, const char *bp, const char *op,
   memset(echo, 0, sizeof(echo));
   float low_a[2] = {0}, low_b[2] = {0}, filter[2] = {0};
   unsigned echo_at = 0;
+  float strength = (cfg->bpm >= 60 && cfg->bpm <= 200) ? cfg->intensity : 1;
+  unsigned delay_frames =
+      advanced ? (unsigned)(44100 * 60 / cfg->bpm * preset.delay_beats) : 11025;
+  if (delay_frames < 1)
+    delay_frames = 1;
+  if (delay_frames > 88200)
+    delay_frames = 88200;
+  unsigned roll_frames =
+      advanced ? (unsigned)(44100 * 60 / cfg->bpm * preset.roll_beats) : 1;
+  if (roll_frames < 1)
+    roll_frames = 1;
+  if (roll_frames > 44100)
+    roll_frames = 44100;
+  unsigned mods = advanced ? preset.mods : 0;
+  float noise_low = 0, noise_high = 0, phase = 0;
+  uint32_t rng = 0x73519u;
+  float feedback = advanced ? preset.feedback : .35f;
+  float filter_end = advanced ? preset.filter_end : 220.f;
+  float curve = advanced ? preset.curve : 1.f;
+  float bass_pivot = advanced ? preset.bass_pivot : .5f;
+  float cut_at = advanced ? preset.cut_at : .5f;
+  float wet_max = advanced ? preset.wet : .3f;
+  float alpha = 1;
+
   for (uint32_t at = 0; at < overlap;) {
     uint32_t n = overlap - at;
     if (n > BLOCK)
@@ -173,43 +212,102 @@ int render_mix(const char *ap, const char *bp, const char *op,
       goto finish;
     }
     for (uint32_t i = 0; i < n; i++) {
-      float t = (float)(at + i) / (overlap - 1), ga = 1 - t, gb = t;
+      float t = (float)(at + i) / (overlap - 1);
+      float shaped = advanced ? powf(t, curve) : t, ga = 1 - shaped,
+            gb = shaped;
       if (!(effects & FX_CROSSFADE)) {
         float width = fminf(.02f, seconds * .2f) / seconds;
-        gb = fmaxf(0, fminf(1, (t - .5f) / width + .5f));
+        gb = fmaxf(0, fminf(1, (t - cut_at) / width + .5f));
         ga = 1 - gb;
       }
       /* Quick cut overrides the amplitude envelope, other processing still
        * stacks. */
       if (effects & FX_QUICK_CUT) {
         float width = fminf(.02f, seconds * .2f) / seconds;
-        gb = fmaxf(0, fminf(1, (t - .5f) / width + .5f));
+        gb = fmaxf(0, fminf(1, (t - cut_at) / width + .5f));
         ga = 1 - gb;
       }
-      float alpha =
-          1 - expf(-6.2831853f * (18000 * powf(220.0f / 18000, t)) / RATE);
+      /* Slow coefficient updates avoid two transcendental calls per sample. */
+      if (((at + i) & 31u) == 0) {
+        float hz = (mods & MOD_HIGH_PASS) ? 30 * powf(filter_end / 30, t)
+                                          : 18000 * powf(filter_end / 18000, t);
+        alpha = 1 - expf(-6.2831853f * hz / RATE);
+      }
+      float envelope = 4 * t * (1 - t), pulse = 1, noise = 0;
+      if (mods & MOD_DIP) {
+        float dip = 1 - strength * (1 - fabsf(2 * t - 1));
+        ga *= dip;
+        gb *= dip;
+      }
+      if (mods & MOD_GATE) {
+        float beat = (at + i) / (float)RATE * cfg->bpm / 60 / preset.gate_beats;
+        float wave = .5f + .5f * cosf(6.2831853f * beat);
+        pulse = 1 - strength * preset.gate_depth * envelope * (1 - wave);
+      }
+      if (mods & MOD_NOISE) {
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        float white = ((rng & 65535) / 32767.5f - 1);
+        noise_low += .025f * (white - noise_low);
+        noise_high += .35f * (white - noise_high);
+        noise = (noise_high - noise_low) * 32767 * preset.noise_mix * strength *
+                envelope;
+      }
+      if (mods & MOD_RING) {
+        phase += 6.2831853f * (preset.ring_hz * (.3f + 1.7f * t)) / RATE;
+        if (phase > 6.2831853f)
+          phase -= 6.2831853f;
+      }
+      float echo_old[2] = {echo[echo_at * 2], echo[echo_at * 2 + 1]};
       for (int c = 0; c < 2; c++) {
         float x = ab[i * 2 + c], y = bb[i * 2 + c];
+        if (mods & MOD_ROLL) {
+          unsigned pos = at + i;
+          if (pos < roll_frames)
+            roll[pos * 2 + c] = (int16_t)x;
+          else {
+            float ramp = fminf(1, (pos - roll_frames) / 220.5f);
+            float w = strength * envelope * ramp;
+            /* Window at loop seams reduces clicks without unbounded storage. */
+            unsigned slot = pos % roll_frames;
+            float edge = fminf(1, fminf(slot, roll_frames - 1 - slot) / 110.f);
+            x = x * (1 - w) + roll[slot * 2 + c] * w * edge;
+          }
+        }
+        x *= pulse;
+        if (mods & MOD_RING) {
+          float w = preset.ring_mix * strength * envelope;
+          x = x * (1 - w) + x * sinf(phase) * w;
+        }
         low_a[c] += .02114f * (x - low_a[c]);
         low_b[c] += .02114f * (y - low_b[c]);
         if (effects & FX_BASS_SWAP) {
-          float swap = t * t * (3 - 2 * t);
-          x -= low_a[c] * swap;
-          y -= low_b[c] * (1 - swap);
+          float z = t < bass_pivot
+                        ? .5f * t / bass_pivot
+                        : .5f + .5f * (t - bass_pivot) / (1 - bass_pivot);
+          float swap = z * z * (3 - 2 * z);
+          x -= low_a[c] * swap * strength;
+          y -= low_b[c] * (1 - swap) * strength;
         }
         filter[c] += alpha * (x - filter[c]);
         if (effects & FX_FILTER)
-          x = x * (1 - t) + filter[c] * t;
+          x = x * (1 - t * strength) +
+              ((mods & MOD_HIGH_PASS) ? x - filter[c] : filter[c]) * t *
+                  strength;
         if (effects & FX_ECHO) {
-          float delayed = echo[echo_at * 2 + c];
-          echo[echo_at * 2 + c] = x * .5f + delayed * .35f;
-          float wet = .3f * t;
+          float delayed = echo_old[c];
+          /* Cross-channel reads captured before either write for stereo
+           * symmetry. */
+          float feedback_sample = echo_old[(mods & MOD_PINGPONG) ? 1 - c : c];
+          echo[echo_at * 2 + c] = x * .5f + feedback_sample * feedback;
+          float wet = wet_max * t * strength;
           x = x * (1 - wet) + delayed * wet;
         }
-        float v = x * ga + y * gb;
+        float v = x * ga + y * gb + noise;
         mix[i * 2 + c] = (int16_t)lrintf(fmaxf(-32768, fminf(32767, v)));
       }
-      echo_at = (echo_at + 1) % 11025;
+      echo_at = (echo_at + 1) % delay_frames;
     }
     if (write_block(out, mix, n))
       goto finish;
@@ -259,8 +357,18 @@ static int cancel_cb(uint32_t d, uint32_t t) {
 int main(int argc, char **argv) {
   if (argc != 9)
     return 2;
-  MixSettings c = {atof(argv[4]), atof(argv[5]), atof(argv[6]),
-                   (unsigned)atoi(argv[7])};
+  MixSettings c = {.start_a = atof(argv[4]),
+                   .start_b = atof(argv[5]),
+                   .duration = atof(argv[6]),
+                   .effects = (unsigned)atoi(argv[7])};
+  if (getenv("PRESET_TEST")) {
+    c.preset_id = atoi(getenv("PRESET_TEST"));
+    c.bpm = getenv("BPM_TEST") ? atof(getenv("BPM_TEST")) : 128;
+    c.intensity = getenv("INTENSITY_TEST") ? atof(getenv("INTENSITY_TEST")) : 1;
+    TransitionPreset p;
+    if (!preset_get(c.preset_id, &p))
+      c.effects = p.effects;
+  }
   int r = render_mix(argv[1], argv[2], argv[3], &c, atoi(argv[8]),
                      getenv("CANCEL_TEST") ? cancel_cb : 0);
   if (r)

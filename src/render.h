@@ -11,6 +11,8 @@ enum {
 typedef struct {
   double start_a, start_b, duration;
   unsigned effects;
+  int preset_id;        /* zero = original manual FX */
+  float bpm, intensity; /* BPM times effects only; intensity 0..1 */
 } MixSettings;
 typedef int (*Progress)(uint32_t done, uint32_t total);
 extern char render_error[160];

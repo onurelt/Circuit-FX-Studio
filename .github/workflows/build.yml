@@ -11,17 +11,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test the production audio engine
         run: |
-          gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c -lm -o tests/render
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           python3 tests/test_audio.py
+          python3 tests/test_presets.py
       - name: Address and undefined-behavior sanitizers
         run: |
-          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_TEST src/render.c src/wav.c -lm -o tests/render
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           python3 tests/test_audio.py
+          python3 tests/test_presets.py
       - name: Compile and exercise production UI
         run: |
-          gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c -lm -o /tmp/ui
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui
           /tmp/ui
-          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ivita tests/test_ui.c vita/ui.c -lm -o /tmp/test-ui
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ivita tests/test_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-ui
           /tmp/test-ui
   build:
     needs: audio-tests

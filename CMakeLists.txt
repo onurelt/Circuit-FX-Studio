@@ -4,13 +4,13 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 project(CircuitFX C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
-add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c)
+add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c src/presets.c)
 target_include_directories(CircuitFX PRIVATE src vita)
 target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
 target_link_libraries(CircuitFX m SceDisplay_stub SceCtrl_stub SceTouch_stub SceAudio_stub ScePower_stub SceIofilemgr_stub)
 vita_create_self(CircuitFX.self CircuitFX UNSAFE)
 vita_create_vpk(CircuitFX-Beta1.vpk CFXS00001 CircuitFX.self
-  VERSION 01.02 NAME "Circuit FX Studio"
+  VERSION 01.03 NAME "Circuit FX Studio"
   FILE assets/icon0.png sce_sys/icon0.png
   FILE assets/bg.png sce_sys/livearea/contents/bg.png
   FILE assets/startup.png sce_sys/livearea/contents/startup.png

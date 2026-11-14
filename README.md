@@ -2,6 +2,20 @@
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
+## Beta 1.3 — 64 DJ-inspired recipes (01.03)
+
+Open **Browse DJ-inspired presets** in the right panel. Four banks have 16 original recipes each: GSP, Micky Friedmann, Anne Louise, and Erik Vilar inspired. These are genre-informed designs, not exact artist techniques or endorsed presets. See [research and sources](docs/DJ_RESEARCH.md) and [all 64 recipes](docs/PRESET_CATALOG.md).
+
+- Tap an artist tab and a recipe to inspect it; tap Apply preset. D-pad left/right selects banks, up/down recipes, L/R switches pages, X applies, Circle cancels.
+- Set **Effect BPM** (60–200) before applying a recipe. Its recommended beat length converts to seconds. Echo, pulse and roll rates use this BPM. **This does not detect beats, change either song's speed, or automatically align tracks.** If BPM is changed later, FX timing changes but the existing transition duration stays fixed; reapply the recipe to update its recommended duration.
+- Cues are preserved. If the recipe is too long for the available audio it is shortened, with a status message. Cues at the end of a song must be moved earlier first.
+- **FX intensity** (0–100%) adjusts echo, filters, bass cuts and the recipe's special modifiers; it is not master volume and does not remove the gain handoff or change its curve.
+- Every recipe supports the same preview and full WAV export. You can still toggle the five basic effects. Extra recipe modifiers stay active until a different recipe is chosen; pick a plain blend recipe to clear them.
+- New effects include stereo feedback echoes, high-pass lifts, source-slice rolls, rhythmic gates, ring modulation, electronic noise sweeps and dip envelopes. No drum samples or artist recordings are added.
+- WAV input remains 44.1 kHz stereo 16-bit PCM. No vocal separation, MP3 support or automatic beatmatching is claimed.
+
+![DJ-inspired preset browser](docs/presets-preview.png)
+
 ## Beta 1.2 interface update (01.02)
 
 - Redesigned native dashboard with rounded panels, multiple font sizes, effect icons, switches and cyan/magenta track styling.
@@ -52,7 +66,7 @@ Export consists of **A [0 → A cue], then the overlap, then B [B cue + duration
 | Bass Swap | Low-frequency separation at approximately 150 Hz; progressively removes A bass and introduces B bass. |
 | Quick Cut | Switches A to B at overlap midpoint with a short 20 ms click-reduction ramp. Overrides the crossfade envelope while other effects remain active. |
 
-Toggle any combination. With Crossfade off, a short midpoint handoff is used. Effect parameters are fixed in Beta 1; all processing is baked into preview/export. Final samples are saturated to prevent integer wraparound. Echo tails end with the overlap.
+Toggle any combination. With Crossfade off, a short midpoint handoff is used. The original manual stack has fixed base parameters; Beta 1.3 recipes supply tuned parameters and global intensity. In all modes, all processing is baked into preview/export. Final samples are saturated to prevent integer wraparound. Echo tails end with the overlap.
 
 Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing files and source songs are not overwritten. Cancellation and failed writes remove partial output. Outputs are capped below 2 GiB. Budget about **180 MB free** for a 14-minute mix plus the longest preview. Rendering streams fixed-size buffers, so RAM does not grow with song length. The temporary preview is removed on clean exit and on next launch after a forced close.
 
@@ -73,12 +87,12 @@ python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
 Host tests:
 
 ```sh
-gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c -lm -o tests/render
+gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
 python3 tests/test_audio.py
 ```
 
-The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
+The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
 
-**Not included:** MP3 decoding, automatic tempo/beat matching, BPM detection, variable effect strengths, saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
+**Not included:** MP3 decoding, automatic tempo/beat matching, BPM detection, user-saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
 
 This is a compiled, host-tested **hardware-test beta**, not a claim of verified playback on a physical Vita. See [HARDWARE_TESTING.md](HARDWARE_TESTING.md). Diagnostic messages are recorded in `ux0:data/CircuitFX/session.log` (reset on launch).
