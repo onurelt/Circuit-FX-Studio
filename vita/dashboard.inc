@@ -6,17 +6,18 @@ static void flat_button(int x,int y,int w,int h,const char *label,
            selected?blend(BG,color,54):RGB(18,27,41));
   txt(x+10,y+(h-19)/2,&body,selected?WHITE:color,label,w-18);
 }
-static unsigned char curve_cache[5][2][40];
+static unsigned char curve_cache[6][2][40];
 static int curves_ready;
 static void prepare_curves(void) {
   if (curves_ready) return;
-  for (int kind=0;kind<5;kind++) for (int ch=0;ch<2;ch++)
+  for (int kind=0;kind<6;kind++) for (int ch=0;ch<2;ch++)
     for (int i=0;i<40;i++) {
       float t=i/39.f,gain=ch?t:1-t;
       if (kind==1) gain=ch?t:expf(-3*t)*(0.75f+0.25f*cosf(t*32));
       if (kind==2) gain=ch?t*t:1-t*t;
       if (kind==3) gain=ch? t<.5f?.25f:.9f : t<.5f?.9f:.25f;
       if (kind==4) gain=ch? t<.5f?.05f:1.f : t<.5f?1.f:.05f;
+      if (kind==5) gain=ch?.3f:.9f;
       curve_cache[kind][ch][i]=(unsigned char)(fmaxf(0,fminf(1,gain))*255);
     }
   curves_ready=1;
@@ -25,8 +26,7 @@ static void curve_card(int x,int y,int w,int h,int kind,uint32_t a,
                        uint32_t b) {
   prepare_curves();
 #ifndef HOST_UI
-  vita2d_color_vertex *vertices=vita2d_pool_malloc(2*2*40*sizeof(*vertices));
-  if (!vertices) return;
+  vita2d_color_vertex *vertices=ui_vertex_batch(2*2*40);
   int n=0;
 #endif
   for (int i=1;i<40;i++) for (int ch=0;ch<2;ch++) {
@@ -38,12 +38,14 @@ static void curve_card(int x,int y,int w,int h,int kind,uint32_t a,
     rect(x0,y0,2,2,ch?b:a);
     rect(x1,y1,2,2,ch?b:a);
 #else
-    vertices[n++]=(vita2d_color_vertex){x0,y0,0,ch?b:a};
-    vertices[n++]=(vita2d_color_vertex){x1,y1,0,ch?b:a};
+    if (vertices) {
+      vertices[n++]=(vita2d_color_vertex){x0,y0,UI_VERTEX_Z,ch?b:a};
+      vertices[n++]=(vita2d_color_vertex){x1,y1,UI_VERTEX_Z,ch?b:a};
+    } else vita2d_draw_line(x0,y0,x1,y1,ch?b:a);
 #endif
   }
 #ifndef HOST_UI
-  vita2d_draw_array(SCE_GXM_PRIMITIVE_LINES,vertices,n);
+  if (vertices) vita2d_draw_array(SCE_GXM_PRIMITIVE_LINES,vertices,n);
 #endif
 }
 void ui_draw(uint32_t *pixels, const View *v) {
@@ -138,19 +140,22 @@ void ui_draw(uint32_t *pixels, const View *v) {
   const char *tabs[]={"TRANSITIONS","EFFECTS","PRESETS"};
   for (int i=0;i<3;i++)
     flat_button(10+316*i,371,310,39,tabs[i],i==0?CYAN:i==1?PINK:WHITE,v->tab==i);
-  const char *fx[]={"Crossfade","Echo Out","Filter Sweep","Bass Swap","Quick Cut"};
+  const char *fx[]={"Crossfade","Echo Out","Filter Sweep","Bass Swap","Quick Cut","Vocal Lite"};
   const char *desc[]={"Blend A out, B in","Echo from A fades out","Filter sweeps the mix",
                      "Swap low frequencies","Fast 20ms handoff"};
   if (v->tab==0 || v->tab==1) {
     int selected=v->tab==0?v->effect_index:v->effect_index;
-    if (selected<0 || selected>4) selected=0;
-    for (int i=0;i<5;i++) {
-      int x=14+188*i,active=(v->settings.effects&(1u<<i))!=0;
-      roundbox(x,420,180,v->tab==0?84:70,7,
-               i==selected || v->row==i+5?RGB(31,75,85):RGB(25,38,56),RGB(14,24,39));
-      curve_card(x+11,428,156,v->tab==0?43:34,i,CYAN,PINK);
-      txt(x+10,v->tab==0?477:468,&body,WHITE,fx[i],145);
-      if (v->tab==1) txt(x+148,468,&small,active?CYAN:MUTED,active?"ON":"OFF",30);
+    if (selected<0 || selected>(v->tab==0?4:5)) selected=0;
+    int cards=v->tab==0?5:6;
+    for (int i=0;i<cards;i++) {
+      int width=v->tab==0?180:148,x=14+(v->tab==0?188:155)*i;
+      int active=i==5?v->vocal_enabled:(v->settings.effects&(1u<<i))!=0;
+      roundbox(x,420,width,v->tab==0?84:70,7,
+               i==selected || (i<5 && v->row==i+5)?
+               RGB(31,75,85):RGB(25,38,56),RGB(14,24,39));
+      curve_card(x+10,428,width-21,v->tab==0?43:34,i,CYAN,PINK);
+      txt(x+8,v->tab==0?477:468,&body,WHITE,fx[i],width-26);
+      if (v->tab==1) txt(x+width-25,468,&small,active?CYAN:MUTED,active?"ON":"OFF",26);
     }
     if (v->tab==0) {
       txt(18,513,&body,WHITE,fx[selected],155);
@@ -159,14 +164,20 @@ void ui_draw(uint32_t *pixels, const View *v) {
                   v->auto_beatmatch?"AUTO BEATMATCH  ON":"AUTO BEATMATCH  OFF",
                   v->auto_beatmatch?CYAN:MUTED,v->auto_beatmatch);
     } else {
-      int active=(v->settings.effects&(1u<<selected))!=0;
+      int active=selected==5?v->vocal_enabled:
+                 (v->settings.effects&(1u<<selected))!=0;
       flat_button(14,497,136,42,active?"ENABLED":"DISABLED",active?CYAN:MUTED,active);
-      txt(165,507,&small,MUTED,"GLOBAL INTENSITY",168);
+      txt(165,507,&small,MUTED,selected==5?"VOCAL STRENGTH":"GLOBAL INTENSITY",168);
       flat_button(340,497,52,42,"-",CYAN,0);
-      snprintf(s,sizeof(s),"%.0f%%",v->settings.intensity*100);
+      if (selected==5) snprintf(s,sizeof(s),"%d%%",v->vocal_strength);
+      else snprintf(s,sizeof(s),"%.0f%%",v->settings.intensity*100);
       txt(405,509,&body,WHITE,s,65);
       flat_button(466,497,52,42,"+",CYAN,0);
-      if (v->auto_beatmatch)
+      if (selected==5) {
+        const char *targets[]={"TRACK A","TRACK B","TRANSITION","BOTH TRACKS"};
+        snprintf(s,sizeof(s),"TARGET: %s",targets[v->vocal_target%4]);
+        flat_button(550,497,390,42,s,PINK,0);
+      } else if (v->auto_beatmatch)
         txt(560,509,&small,MUTED,"FX BPM follows Track A",355);
       else if (v->settings.preset_id) {
         txt(547,507,&small,MUTED,"FX BPM",125);

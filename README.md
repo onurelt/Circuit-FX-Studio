@@ -1,6 +1,16 @@
-# Circuit FX Studio — native PS Vita Beta 2.0
+# Circuit FX Studio — native PS Vita Beta 2.1
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
+
+## Beta 2.1 — Vita graphics repair and Vocal Reduction Lite (02.01)
+
+Beta 2.0 rendered text and some primitive shapes on real Vita hardware, but its custom vertex batches for panels, waveforms and effect curves appeared as scattered dots or disappeared. All custom vertices now use Vita2D's 16-byte aligned pool allocation and its sample's **0.5 depth**. If a batch cannot be allocated, its shapes fall back to Vita2D's GPU rectangles or lines. The app logs `TIMING gpu_fallbacks` at a clean exit. This is a targeted fix informed by the supplied Vita photos and the library's own sample; **a fresh on-device screenshot is still required** to confirm it on the user's Vita.
+
+In the Effects tab, tap **Vocal Lite**, then **Enabled**, adjust **Vocal Strength** in 10% steps, and tap **Target** to cycle Track A, Track B, Transition, or Both Tracks. The default target is Transition and the feature starts disabled. Preview prepares and caches the selected reduction offline, then the existing effects, beatmatching, playback and WAV export use that PCM. Cache hits are logged in `session.log`. Cancellation removes partial files. The original songs are never overwritten.
+
+For higher quality, copy matching **44.1 kHz stereo 16-bit PCM WAV stems** next to the original song in `ux0:data/CircuitFX/music/`. For `song.mp3` or `song.wav`, name them `song.instrumental.wav` and, optionally, `song.vocals.wav`. They must have exactly the same number of audio frames as the selected original or preview reports an error. The app uses the instrumental stem when present, blending from the original at 0% to the instrumental at 100%; without it, a vocals-only stem is subtracted by the chosen amount. These sidecars are hidden from the regular song picker. If neither stem exists, a lightweight high-passed center reduction subtracts mostly shared L/R content above the bass range. Transition target changes only the overlap; the original prefix and tail are preserved, with 10 ms edge blends.
+
+**Limitations:** Center reduction is not AI source separation. Centered drums, bass harmonics and instruments can also be attenuated; off-center, reverberant and doubled vocals often remain. Stem quality and alignment are the user's responsibility. Vocal preparation takes extra storage of roughly 10.1 MiB per song-minute per processed variant; transition-only plus beatmatching can cache two B versions. The existing 512 MiB eviction policy applies, although currently selected files remain pinned and can temporarily exceed it. Processing is offline and can be canceled; no extra DSP runs in the audio playback thread. Host tests validate samples and export identity, but stock-clock CPU, listening quality and system stability need on-device testing.
 
 ## Beta 2.0 — automatic beatmatching (02.00)
 
@@ -94,7 +104,7 @@ The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebui
 
 ## Install
 
-1. Copy `CircuitFX-Beta2.0.vpk` to your homebrew-enabled Vita and install with VitaShell.
+1. Copy `CircuitFX-Beta2.1.vpk` to your homebrew-enabled Vita and install with VitaShell.
 2. Launch once to create the folders, then exit with Triangle.
 3. Put songs in `ux0:data/CircuitFX/music/` using VitaShell USB or FTP.
 4. Launch Circuit FX Studio. Select Track A and Track B.
@@ -131,7 +141,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio, beatmatch and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.0` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
+GitHub Actions runs host audio, vocal, beatmatch and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.1` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
 
 Local Vita build:
 
@@ -140,7 +150,7 @@ export VITASDK=/path/to/vitasdk
 export PATH="$VITASDK/bin:$PATH"
 cmake -S . -B build
 cmake --build build --parallel 2
-python3 tests/check_vpk.py build/CircuitFX-Beta2.0.vpk
+python3 tests/check_vpk.py build/CircuitFX-Beta2.1.vpk
 ```
 
 Host tests:
@@ -150,6 +160,8 @@ gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/pr
 python3 tests/test_audio.py
 gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
 python3 tests/test_beatmatch.py
+gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
+python3 tests/test_vocal.py
 gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
 python3 tests/test_mp3.py
 ```

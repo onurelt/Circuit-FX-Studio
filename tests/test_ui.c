@@ -24,8 +24,14 @@ int main(void) {
   assert(ui_hit_test_for_tab(&v,730,517)==-1);
   v.auto_beatmatch=0;
   v.settings.preset_id=65;
-  for (int i=0;i<5;i++)
-    assert(ui_hit_test_for_tab(&v,20+188*i,450)==120+i);
+  for (int i=0;i<6;i++)
+    assert(ui_hit_test_for_tab(&v,20+155*i,450)==120+i);
+  v.effect_index=5;
+  v.vocal_enabled=1;
+  v.vocal_strength=70;
+  v.vocal_target=2;
+  assert(ui_hit_test_for_tab(&v,740,517)==163);
+  v.effect_index=0;
   const int effects[][3]={{50,517,150},{360,517,151},{490,517,152},
                            {730,517,153},{890,517,154}};
   for (int i=0;i<5;i++) assert(ui_hit_test_for_tab(&v,effects[i][0],effects[i][1])==effects[i][2]);

@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 2.0
+name: Build Circuit FX Studio Vita Beta 2.1
 on:
   push:
   workflow_dispatch:
@@ -17,6 +17,8 @@ jobs:
           tests/mp3_waveform tests/fixtures/test-stereo-44100.mp3
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
           python3 tests/test_beatmatch.py
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
+          python3 tests/test_vocal.py
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
@@ -25,10 +27,12 @@ jobs:
         run: |
           gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert_asan
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool_asan
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
           MP3_IMPORT_EXE=tests/mp3_convert_asan ASAN_OPTIONS=detect_leaks=0 python3 tests/test_mp3.py
+          VOCAL_TOOL=tests/vocal_tool_asan ASAN_OPTIONS=detect_leaks=0 python3 tests/test_vocal.py
       - name: Compile and exercise production UI
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui
@@ -56,12 +60,12 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel 2
-          python3 tests/check_vpk.py build/CircuitFX-Beta2.0.vpk
+          python3 tests/check_vpk.py build/CircuitFX-Beta2.1.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta2.0
+          name: Circuit-FX-Studio-Vita-Beta2.1
           path: |
-            build/CircuitFX-Beta2.0.vpk
+            build/CircuitFX-Beta2.1.vpk
             README.md
             HARDWARE_TESTING.md
           if-no-files-found: error

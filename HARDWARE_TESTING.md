@@ -2,6 +2,13 @@
 
 No physical Vita was available during development. Host tests exercise the same C audio renderer linked into the native VPK. Compilation and package checks do not verify hardware audio, shell behavior, suspend/resume or storage throughput.
 
+## Version 02.01 graphics and vocal checks — required on real Vita
+
+- Install over 02.00 with VitaShell at stock clocks. Before choosing a song, verify the entire 960×544 dashboard: solid panels and buttons, all five transition curves, six Effects cards, three tabs, cyan and magenta labels, and no scattered dots. Load both songs and verify the full waveform bars, dragging, cue markers, transition shading, pinch zoom and modal backgrounds. Take a clear screenshot or photo of each tab. If anything is still missing, provide the screenshot and `ux0:data/CircuitFX/session.log` after a Triangle exit, including the `TIMING gpu_fallbacks` count.
+- In Effects, select Vocal Lite, toggle Enabled, set 0/50/100% and cycle A, B, Transition, Both. Preview and export each: at 0% audio should be unchanged; A/B targets should affect that whole song; Transition should affect the overlap while leaving the A prefix and B tail unchanged. Try all five effects, WAV sounds and Auto Beatmatch in combination.
+- Put `song.instrumental.wav` and `song.vocals.wav` beside `song.mp3` or `song.wav`, with exactly matching sample counts. Verify the instrumental stem is used; remove it and confirm vocals-only subtraction; remove both and check center reduction. Try a deliberately mismatched stem and ensure the error does not alter the selected song.
+- Cancel first-time vocal preparation with Circle and by tapping the progress dialog. Check `.part` cleanup, retry, repeat preview to see `TIMING vocal_cache_hit=1`, then exit and relaunch to verify persistence. Test low free space, repeated playback/replay/stop/export, PS/LiveArea close, and a 5–7 minute pair at stock clocks. Listen for boundary clicks, vocal artifacts and playback stutter. Capture timings before and after with the same songs.
+
 ## Version 02.00 beatmatch checks
 
 - Install over 01.09 at normal clocks. Load two dance tracks with clearly different steady tempos (for example, 120 and 128 BPM). Confirm the displayed BPM for each deck, tap each BPM to set a manual value, and check the asterisk, edit cancel and reselect behavior. With Auto off, original speed and effect BPM controls must still work.

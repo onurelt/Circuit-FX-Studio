@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "mp3_import.h"
 #include "beatmatch.h"
+#include "vocal.h"
 #include <math.h>
 #include <psp2/audioout.h>
 #include <psp2/ctrl.h>
@@ -26,7 +27,8 @@ static View view;
 static char songs[MAX_SONGS][256], paths[2][512];
 static char originals[2][512], selected_names[2][256];
 static char cache_paths[2][512];
-static char matched_path[512], render_paths[2][512];
+static char matched_path[512], matched_overlap_path[512];
+static char vocal_cache_paths[2][512], render_paths[2][512], overlap_paths[2][512];
 static MixSettings render_settings;
 static BeatInfo beats[2];
 static char active_wave_part[512];
@@ -81,6 +83,9 @@ static const SceDateTime *cache_age(const SceIoStat *st) {
 static int cache_protected(const char *path) {
   if (active_wave_part[0] && !strcmp(active_wave_part, path)) return 1;
   if (matched_path[0] && !strcmp(matched_path,path)) return 1;
+  if (matched_overlap_path[0] && !strcmp(matched_overlap_path,path)) return 1;
+  for (int i=0;i<2;i++)
+    if (vocal_cache_paths[i][0] && !strcmp(vocal_cache_paths[i],path)) return 1;
   for (int i = 0; i < 2; ++i)
     if (cache_paths[i][0] && !strcmp(cache_paths[i], path))
       return 1;
@@ -212,6 +217,8 @@ static void message(const char *s) {
 static void invalidate(void) {
   ready = view.ready = 0;
   matched_path[0]=0;
+  matched_overlap_path[0]=0;
+  vocal_cache_paths[0][0]=vocal_cache_paths[1][0]=0;
   remove(PREVIEW);
   screen_dirty = 1;
 }
@@ -302,7 +309,9 @@ static void scan(void) {
   memset(&e, 0, sizeof(e));
   while (sceIoDread(d, &e) > 0) {
     if (!SCE_S_ISDIR(e.d_stat.st_mode) && count < MAX_SONGS &&
-        (has_suffix(e.d_name, ".wav") || has_suffix(e.d_name, ".mp3")))
+        (has_suffix(e.d_name, ".wav") || has_suffix(e.d_name, ".mp3")) &&
+        !has_suffix(e.d_name,".instrumental.wav") &&
+        !has_suffix(e.d_name,".vocals.wav"))
       snprintf(songs[count++], 256, "%s", e.d_name);
     memset(&e, 0, sizeof(e));
   }
@@ -735,15 +744,15 @@ static int wait_for_beats(void) {
   }
   return 0;
 }
-static int prepare_match(double ratio) {
-  snprintf(render_paths[0],sizeof(render_paths[0]),"%s",paths[0]);
-  snprintf(render_paths[1],sizeof(render_paths[1]),"%s",paths[1]);
+static int prepare_match(const char *input,double ratio,char *selected) {
+  snprintf(selected,512,"%s",input);
   if (fabs(ratio-1)<.001) return 0;
   SceIoStat st;
   uint32_t key=track_signature(originals[1],&st);
   if (!key) {message("Track B changed. Select it again.");return -1;}
   uint32_t a=(uint32_t)lround(view.track_bpm[0]*1000);
   uint32_t b=(uint32_t)lround(view.track_bpm[1]*1000);
+  key=(key^filename_hash(input))*16777619u;
   key=(key^a)*16777619u;
   key=(key^b)*16777619u;
   char cache[512],part[512];
@@ -753,7 +762,7 @@ static int prepare_match(double ratio) {
   if (inspect_wav(cache,&frames,&offset)) {
     remove(cache);remove(part);
     uint32_t source_frames,source_offset;
-    if (inspect_wav(paths[1],&source_frames,&source_offset)) {
+    if (inspect_wav(input,&source_frames,&source_offset)) {
       message(render_error);return -1;
     }
     if ((uint64_t)llround(source_frames/ratio)*4+44>CACHE_LIMIT_BYTES) {
@@ -761,7 +770,7 @@ static int prepare_match(double ratio) {
     }
     uint64_t started=sceKernelGetProcessTimeWide();
     message("Preparing pitch-preserving beatmatch. Circle cancels.");
-    int rc=stretch_async(paths[1],part,ratio);
+    int rc=stretch_async(input,part,ratio);
     char timing[120];
     snprintf(timing,sizeof(timing),"TIMING beatmatch_ms=%llu result=%d",
              (unsigned long long)(sceKernelGetProcessTimeWide()-started)/1000,rc);
@@ -772,10 +781,119 @@ static int prepare_match(double ratio) {
       return -1;
     }
   } else logline("TIMING beatmatch_cache_hit=1");
-  snprintf(matched_path,sizeof(matched_path),"%s",cache);
-  snprintf(render_paths[1],sizeof(render_paths[1]),"%s",cache);
+  snprintf(selected,512,"%s",cache);
   cache_touch(cache);
   prune_cache();
+  return 0;
+}
+static struct {
+  atomic_int cancel,done,result;
+  atomic_uint processed,total;
+  char input[512],output[512],instrumental[512],vocals[512];
+  unsigned strength;
+} vocal_job;
+static int vocal_progress(uint32_t at,uint32_t total) {
+  atomic_store(&vocal_job.processed,at);
+  atomic_store(&vocal_job.total,total);
+  return atomic_load(&vocal_job.cancel);
+}
+static int vocal_worker(SceSize args,void *argp) {
+  (void)args;(void)argp;
+  int rc=vocal_reduce_wav(vocal_job.input,vocal_job.output,
+               vocal_job.instrumental,vocal_job.vocals,
+               vocal_job.strength,vocal_progress);
+  atomic_store(&vocal_job.result,rc);
+  atomic_store(&vocal_job.done,1);
+  return 0;
+}
+static int vocal_async(const char *input,const char *output,
+                       const char *inst,const char *voc,unsigned strength) {
+  vocal_error[0]=0;
+  snprintf(vocal_job.input,sizeof(vocal_job.input),"%s",input);
+  snprintf(vocal_job.output,sizeof(vocal_job.output),"%s",output);
+  snprintf(vocal_job.instrumental,sizeof(vocal_job.instrumental),"%s",inst);
+  snprintf(vocal_job.vocals,sizeof(vocal_job.vocals),"%s",voc);
+  vocal_job.strength=strength;
+  atomic_store(&vocal_job.cancel,0);
+  atomic_store(&vocal_job.done,0);
+  atomic_store(&vocal_job.result,-1);
+  atomic_store(&vocal_job.processed,0);
+  atomic_store(&vocal_job.total,0);
+  SceUID thread=sceKernelCreateThread("CircuitFX Vocal",vocal_worker,
+                                      0x10000110,64*1024,0,0,NULL);
+  if (thread<0) return -1;
+  if (sceKernelStartThread(thread,0,NULL)<0) {
+    sceKernelDeleteThread(thread);return -1;
+  }
+  view.progress=0;show();
+  int last=-1;
+  uint64_t tick=sceKernelGetProcessTimeWide()+500000;
+  while (!atomic_load(&vocal_job.done)) {
+    unsigned hit=buttons();
+    int tapped=touch_press();
+    if ((hit&SCE_CTRL_CIRCLE) ||
+        (tapped && touch_x>=192 && touch_x<768 && touch_y>=185 && touch_y<349))
+      atomic_store(&vocal_job.cancel,1);
+    unsigned total=atomic_load(&vocal_job.total);
+    unsigned done=atomic_load(&vocal_job.processed);
+    int percent=total?(int)((uint64_t)done*100/total):0;
+    if (percent!=last) {view.progress=percent;show();last=percent;}
+    uint64_t now=sceKernelGetProcessTimeWide();
+    if (now>=tick) {sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);tick=now+500000;}
+    sceKernelDelayThread(10000);
+  }
+  sceKernelWaitThreadEnd(thread,NULL,NULL);
+  sceKernelDeleteThread(thread);
+  view.progress=-1;screen_dirty=1;
+  return atomic_load(&vocal_job.result);
+}
+static int prepare_vocal(int deck,const char *input,char *selected) {
+  snprintf(selected,512,"%s",input);
+  if (!view.vocal_enabled || view.vocal_strength<=0) return 0;
+  const char *dot=strrchr(originals[deck],'.');
+  if (!dot) {message("Song has no extension for stem matching.");return -1;}
+  int prefix=(int)(dot-originals[deck]);
+  char inst[512],voc[512];
+  if (snprintf(inst,sizeof(inst),"%.*s.instrumental.wav",prefix,originals[deck])>=
+      (int)sizeof(inst) ||
+      snprintf(voc,sizeof(voc),"%.*s.vocals.wav",prefix,originals[deck])>=
+      (int)sizeof(voc)) {message("Stem file path is too long.");return -1;}
+  SceIoStat st;
+  uint32_t key=track_signature(originals[deck],&st);
+  if (!key) {message("Song changed. Select it again.");return -1;}
+  uint32_t ikey=track_signature(inst,&st),vkey=track_signature(voc,&st);
+  if (!ikey) inst[0]=0;
+  if (!vkey || ikey) voc[0]=0;
+  key=(key^view.vocal_strength)*16777619u;
+  key=(key^ikey)*16777619u;
+  key=(key^vkey)*16777619u;
+  char cache[512],part[512];
+  snprintf(cache,sizeof(cache),ROOT "/cache/vocal-%08x-v1.wav",key);
+  snprintf(part,sizeof(part),ROOT "/cache/vocal-%08x-v1.part",key);
+  uint32_t frames,offset,source_frames,source_offset;
+  if (inspect_wav(input,&source_frames,&source_offset)) {
+    message(render_error);return -1;
+  }
+  if (inspect_wav(cache,&frames,&offset) || frames!=source_frames) {
+    remove(cache);remove(part);
+    if ((uint64_t)source_frames*4+44>CACHE_LIMIT_BYTES) {
+      message("Vocal cache exceeds the 512 MB limit.");return -1;
+    }
+    uint64_t started=sceKernelGetProcessTimeWide();
+    message("Preparing vocal reduction. Circle cancels.");
+    int rc=vocal_async(input,part,inst,voc,view.vocal_strength);
+    char timing[120];
+    snprintf(timing,sizeof(timing),"TIMING vocal_ms=%llu result=%d",
+             (unsigned long long)(sceKernelGetProcessTimeWide()-started)/1000,rc);
+    logline(timing);
+    if (rc || rename(part,cache)) {
+      remove(part);
+      message(vocal_error[0]?vocal_error:"Could not cache vocal reduction.");
+      return -1;
+    }
+  } else logline("TIMING vocal_cache_hit=1");
+  snprintf(selected,512,"%s",cache);
+  cache_touch(cache);prune_cache();
   return 0;
 }
 static void browse(int deck) {
@@ -1073,14 +1191,35 @@ static void preview(void) {
   for (int d=0; d<2; d++)
     if (ensure_pcm(d)) return;
   render_settings=view.settings;
-  if (prepare_match(ratio)) return;
+  for (int d=0;d<2;d++) {
+    strcpy(render_paths[d],paths[d]);
+    overlap_paths[d][0]=0;
+  }
+  int vocal_active=view.vocal_enabled && view.vocal_strength>0;
+  for (int d=0;d<2;d++) {
+    int wanted=vocal_active && (view.vocal_target==2 ||
+            view.vocal_target==3 || view.vocal_target==d);
+    if (!wanted) continue;
+    if (prepare_vocal(d,paths[d],vocal_cache_paths[d])) return;
+    if (view.vocal_target==2)
+      snprintf(overlap_paths[d],sizeof(overlap_paths[d]),"%s",vocal_cache_paths[d]);
+    else snprintf(render_paths[d],sizeof(render_paths[d]),"%s",vocal_cache_paths[d]);
+  }
+  if (prepare_match(render_paths[1],ratio,matched_path)) return;
+  snprintf(render_paths[1],sizeof(render_paths[1]),"%s",matched_path);
+  if (overlap_paths[1][0]) {
+    if (prepare_match(overlap_paths[1],ratio,matched_overlap_path)) return;
+    snprintf(overlap_paths[1],sizeof(overlap_paths[1]),"%s",matched_overlap_path);
+  }
   if (view.auto_beatmatch) render_settings.start_b/=ratio;
   message("Rendering preview...");
   view.progress = 0;
   show();
   uint64_t render_started = sceKernelGetProcessTimeWide();
-  int rc = render_mix(render_paths[0],render_paths[1],PREVIEW,
-                      &render_settings,1,progress);
+  int rc = render_mix_layers(render_paths[0],render_paths[1],
+                overlap_paths[0][0]?overlap_paths[0]:NULL,
+                overlap_paths[1][0]?overlap_paths[1]:NULL,
+                PREVIEW,&render_settings,1,progress);
   char timing[128];
   snprintf(timing, sizeof(timing), "TIMING preview_render_ms=%llu result=%d",
            (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
@@ -1151,8 +1290,10 @@ static void export_mix(void) {
   view.progress = 0;
   show();
   uint64_t render_started = sceKernelGetProcessTimeWide();
-  int rc = render_mix(render_paths[0],render_paths[1],out,
-                      &render_settings,0,progress);
+  int rc = render_mix_layers(render_paths[0],render_paths[1],
+                overlap_paths[0][0]?overlap_paths[0]:NULL,
+                overlap_paths[1][0]?overlap_paths[1]:NULL,
+                out,&render_settings,0,progress);
   char timing[128];
   snprintf(timing, sizeof(timing), "TIMING export_render_ms=%llu result=%d",
            (unsigned long long)(sceKernelGetProcessTimeWide() - render_started) /
@@ -1386,7 +1527,7 @@ static void edit_time(int row) {
   screen_dirty = 1;
 }
 static void card_action(int index) {
-  if (index<0 || index>4) return;
+  if (index<0 || index>5) return;
   if (view.tab==2) {
     int id=view.preset_bank*16+view.preset_page*5+index+1;
     if (id<=(view.preset_bank+1)*16) {
@@ -1397,16 +1538,17 @@ static void card_action(int index) {
   }
   view.effect_index=index;
   if (view.tab==0) {
+    if (index==5) return;
     view.settings.preset_id=0;
     view.settings.effects=index==4 ? FX_QUICK_CUT :
                            FX_CROSSFADE | (index ? 1u<<index : 0);
     invalidate();
     message("Transition selected. Preview to hear it.");
-  } else {
+  } else if (index<5) {
     view.settings.effects^=1u<<index;
     invalidate();
     message("Effect stack updated. Preview to hear it.");
-  }
+  } else message("Vocal Reduction Lite selected. Use controls below.");
 }
 static void direct_action(int action) {
   if (action==160 || action==161) edit_time(15+action-160);
@@ -1418,7 +1560,7 @@ static void direct_action(int action) {
   } else if (action>=110 && action<=112) {
     view.tab=action-110;
     screen_dirty=1;
-  } else if (action>=120 && action<125) card_action(action-120);
+  } else if (action>=120 && action<=125) card_action(action-120);
   else if (action>=130 && action<138) {
     view.preset_bank=action-130;
     view.preset_page=0;
@@ -1429,12 +1571,22 @@ static void direct_action(int action) {
     screen_dirty=1;
   } else if (action==142) browse_presets();
   else if (action==150) {
-    view.settings.effects^=1u<<view.effect_index;
+    if (view.tab==1 && view.effect_index==5)
+      view.vocal_enabled=!view.vocal_enabled;
+    else view.settings.effects^=1u<<view.effect_index;
     invalidate();
   } else if (action==151 || action==152) {
-    float delta=action==151?-.05f:.05f;
-    view.settings.intensity=fmaxf(0,fminf(1,
-                      roundf((view.settings.intensity+delta)*20)/20));
+    if (view.tab==1 && view.effect_index==5)
+      view.vocal_strength=(int)fmaxf(0,fminf(100,view.vocal_strength+
+                                          (action==151?-10:10)));
+    else {
+      float delta=action==151?-.05f:.05f;
+      view.settings.intensity=fmaxf(0,fminf(1,
+                        roundf((view.settings.intensity+delta)*20)/20));
+    }
+    invalidate();
+  } else if (action==163) {
+    view.vocal_target=(view.vocal_target+1)%4;
     invalidate();
   } else if (action==153 || action==154) {
     view.settings.bpm=fmaxf(60,fminf(200,
@@ -1459,7 +1611,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 2.0 / 02.00\n");
+    fprintf(log, "Circuit FX Vita Beta 2.1 / 02.01\n");
     fclose(log);
   }
   if (vita2d_init() < 0 || ui_gpu_init() < 0) {
@@ -1480,6 +1632,8 @@ int main(void) {
   view.settings.bpm = 128;
   view.settings.intensity = 1;
   view.auto_beatmatch=1;
+  view.vocal_strength=70;
+  view.vocal_target=2; /* transition only */
   view.wave_window=45;
   view.wave_pan=-20;
   view.selected_preset=65;
@@ -1576,6 +1730,9 @@ int main(void) {
            (unsigned long long)(draw_count ? draw_total_us / draw_count
                                            : 0),
            (unsigned long long)draw_max_us);
+  logline(summary);
+  snprintf(summary,sizeof(summary),"TIMING gpu_fallbacks=%u",
+           ui_gpu_fallback_count());
   logline(summary);
   prune_cache();
   logline("Clean exit");

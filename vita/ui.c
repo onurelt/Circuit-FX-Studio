@@ -6,6 +6,16 @@
 #include <strings.h>
 #ifndef HOST_UI
 #include <vita2d.h>
+#define UI_VERTEX_Z 0.5f
+static unsigned ui_gpu_fallbacks;
+static vita2d_color_vertex *ui_vertex_batch(size_t count) {
+  /* Vita2D's own custom-vertex example uses aligned GPU pool memory. */
+  vita2d_color_vertex *vertices =
+      vita2d_pool_memalign(count * sizeof(*vertices), sizeof(*vertices));
+  if (!vertices) ui_gpu_fallbacks++;
+  return vertices;
+}
+unsigned ui_gpu_fallback_count(void) { return ui_gpu_fallbacks; }
 #endif
 typedef struct {
   int w, h;
@@ -56,21 +66,24 @@ static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
   if (r > w / 2) r = w / 2;
   if (r > h / 2) r = h / 2;
   /* One GPU batch for the gradient body, four small rounded corners. */
-  vita2d_color_vertex *v=vita2d_pool_malloc(18*sizeof(*v));
-  if (!v) return;
+  vita2d_color_vertex *v=ui_vertex_batch(18);
+  if (!v) {
+    vita2d_draw_rectangle(x+r,y,w-2*r,h,top);
+    vita2d_draw_rectangle(x,y+r,w,h-2*r,bottom);
+  }
   int edges[3][4] = {{x+r,y,w-2*r,h}, {x,y+r,r,h-2*r},
                      {x+w-r,y+r,r,h-2*r}};
-  for (int k=0;k<3;k++) {
+  for (int k=0;v && k<3;k++) {
     int *e=edges[k];
     uint32_t a=k ? blend(top,bottom,r*255/h) : top;
     uint32_t b=k ? blend(top,bottom,(h-r)*255/h) : bottom;
     vita2d_color_vertex quad[6] = {
-      {e[0],e[1],0,a},{e[0]+e[2],e[1],0,a},
-      {e[0],e[1]+e[3],0,b},{e[0]+e[2],e[1],0,a},
-      {e[0]+e[2],e[1]+e[3],0,b},{e[0],e[1]+e[3],0,b}};
+      {e[0],e[1],UI_VERTEX_Z,a},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
+      {e[0],e[1]+e[3],UI_VERTEX_Z,b},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
+      {e[0]+e[2],e[1]+e[3],UI_VERTEX_Z,b},{e[0],e[1]+e[3],UI_VERTEX_Z,b}};
     memcpy(v+k*6,quad,sizeof(quad));
   }
-  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,18);
+  if (v) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,18);
   if (r) {
     vita2d_draw_fill_circle(x+r,y+r,r,top);
     vita2d_draw_fill_circle(x+w-r,y+r,r,top);
@@ -191,10 +204,11 @@ int ui_hit_test_for_tab(const View *v, int x, int y) {
              !v->auto_beatmatch && x >= 665 && x < 707 ? 154 : -1;
   } else if (v->tab == 1) {
     if (y >= 420 && y < 490 && x >= 14 && x < 946)
-      return 120 + (x - 14) / 188;
+      return 120 + (x - 14) / 155;
     if (y >= 497 && y < 541)
       return x < 150 ? 150 : x >= 340 && x < 392 ? 151 :
              x >= 466 && x < 518 ? 152 :
+             v->effect_index==5 && x>=550 && x<940 ? 163 :
              v->settings.preset_id && !v->auto_beatmatch && x >= 710 && x < 762 ? 153 :
              v->settings.preset_id && !v->auto_beatmatch && x >= 872 && x < 924 ? 154 : -1;
   } else if (y>=507 && y<543 && x>=620 && x<940) return 162;
@@ -229,8 +243,7 @@ static void draw_wave(const View *v, int deck, double pan, double span,
   double length = v->lengths[deck];
   if (length <= 0) return;
 #ifndef HOST_UI
-  vita2d_color_vertex *bars=vita2d_pool_malloc(880*6*sizeof(*bars));
-  if (!bars) return;
+  vita2d_color_vertex *bars=ui_vertex_batch(880*6);
 #endif
   for (int i=0;i<880;i++) {
     double t=v->wave_origin[deck]+pan+span*(i+0.5)/880.0;
@@ -242,15 +255,17 @@ static void draw_wave(const View *v, int deck, double pan, double span,
 #ifdef HOST_UI
     if (valid) rect(54+i,y-h,1,h*2+1,color);
 #else
-    vita2d_color_vertex quad[6]={
-      {54+i,y-h,0,valid?color:0},{55+i,y-h,0,valid?color:0},
-      {54+i,y+h+1,0,valid?color:0},{55+i,y-h,0,valid?color:0},
-      {55+i,y+h+1,0,valid?color:0},{54+i,y+h+1,0,valid?color:0}};
-    memcpy(bars+i*6,quad,sizeof(quad));
+    if (bars) {
+      vita2d_color_vertex quad[6]={
+        {54+i,y-h,UI_VERTEX_Z,valid?color:0},{55+i,y-h,UI_VERTEX_Z,valid?color:0},
+        {54+i,y+h+1,UI_VERTEX_Z,valid?color:0},{55+i,y-h,UI_VERTEX_Z,valid?color:0},
+        {55+i,y+h+1,UI_VERTEX_Z,valid?color:0},{54+i,y+h+1,UI_VERTEX_Z,valid?color:0}};
+      memcpy(bars+i*6,quad,sizeof(quad));
+    } else if (valid) vita2d_draw_rectangle(54+i,y-h,1,h*2+1,color);
 #endif
   }
 #ifndef HOST_UI
-  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,bars,880*6);
+  if (bars) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,bars,880*6);
 #endif
 }
 #include "dashboard.inc"
@@ -358,8 +373,10 @@ static void draw_wave(const View *v, int deck, double pan, double span,
     }
     line[pos] = 0;
     txt(559, y, &small, MUTED, line, 350);
+    double shown_bpm=v->auto_beatmatch && v->track_bpm[0]>0 ?
+                     v->track_bpm[0] : v->settings.bpm;
     snprintf(s, sizeof(s), "%d beats  /  %.2f sec at %.0f BPM", p.beats,
-             p.beats * 60.0 / v->settings.bpm, v->settings.bpm);
+             p.beats * 60.0 / shown_bpm, shown_bpm);
     txt(559, 310, &body, CYAN, s, 350);
     snprintf(s, sizeof(s), "Echo %.2f beat   Feedback %.0f%%", p.delay_beats,
              p.feedback * 100);

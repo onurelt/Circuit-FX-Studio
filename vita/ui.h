@@ -18,6 +18,7 @@ typedef struct {
   double wave_pan, wave_window, wave_origin[2];
   float track_bpm[2];
   int bpm_manual[2], auto_beatmatch;
+  int vocal_enabled, vocal_strength, vocal_target;
   int tab, effect_index, preset_bank, preset_page;
   double play_position, preview_length;
   int preset_browser, selected_preset;
@@ -29,6 +30,7 @@ void ui_draw(uint32_t *pixels, const View *view);
 #ifndef HOST_UI
 int ui_gpu_init(void);
 void ui_gpu_fini(void);
+unsigned ui_gpu_fallback_count(void);
 #endif
 /* Shared with native touch routing and host layout tests. */
 int ui_hit_test_for_tab(const View *v, int x, int y);
