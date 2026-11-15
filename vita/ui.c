@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#ifndef HOST_UI
+#include <vita2d.h>
+#define UI_VERTEX_Z 0.5f
+static unsigned ui_gpu_fallbacks;
+static vita2d_color_vertex *ui_vertex_batch(size_t count) {
+  /* Vita2D's own custom-vertex example uses aligned GPU pool memory. */
+  vita2d_color_vertex *vertices =
+      vita2d_pool_memalign(count * sizeof(*vertices), sizeof(*vertices));
+  if (!vertices) ui_gpu_fallbacks++;
+  return vertices;
+}
+unsigned ui_gpu_fallback_count(void) { return ui_gpu_fallbacks; }
+#endif
 typedef struct {
   int w, h;
   const unsigned char *widths, *glyphs;
@@ -25,13 +38,19 @@ static uint32_t blend(uint32_t a, uint32_t b, int t) {
   return c;
 }
 static void rect(int x, int y, int w, int h, uint32_t c) {
+#ifdef HOST_UI
   for (int j = y; j < y + h && j < 544; j++)
     for (int i = x; i < x + w && i < 960; i++)
       if (i >= 0 && j >= 0)
         fb[j * 960 + i] = c;
+#else
+  if (w > 0 && h > 0)
+    vita2d_draw_rectangle(x, y, w, h, c);
+#endif
 }
 static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
                      uint32_t bottom) {
+#ifdef HOST_UI
   for (int j = 0; j < h; j++) {
     int cut = 0;
     if (j < r)
@@ -41,6 +60,40 @@ static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
     rect(x + cut, y + j, w - 2 * cut, 1,
          blend(top, bottom, j * 255 / (h > 1 ? h - 1 : 1)));
   }
+#else
+  if (w <= 0 || h <= 0)
+    return;
+  if (r > w / 2) r = w / 2;
+  if (r > h / 2) r = h / 2;
+  /* One GPU batch for the gradient body, four small rounded corners. */
+  vita2d_color_vertex *v=ui_vertex_batch(18);
+  if (!v) {
+    vita2d_draw_rectangle(x+r,y,w-2*r,h,top);
+    vita2d_draw_rectangle(x,y+r,w,h-2*r,bottom);
+  }
+  int edges[3][4] = {{x+r,y,w-2*r,h}, {x,y+r,r,h-2*r},
+                     {x+w-r,y+r,r,h-2*r}};
+  int count=0;
+  for (int k=0;v && k<3;k++) {
+    int *e=edges[k];
+    if (e[2]<=0 || e[3]<=0) continue;
+    uint32_t a=k ? blend(top,bottom,r*255/h) : top;
+    uint32_t b=k ? blend(top,bottom,(h-r)*255/h) : bottom;
+    vita2d_color_vertex quad[6] = {
+      {e[0],e[1],UI_VERTEX_Z,a},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
+      {e[0],e[1]+e[3],UI_VERTEX_Z,b},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
+      {e[0]+e[2],e[1]+e[3],UI_VERTEX_Z,b},{e[0],e[1]+e[3],UI_VERTEX_Z,b}};
+    memcpy(v+count,quad,sizeof(quad));
+    count+=6;
+  }
+  if (v && count) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,count);
+  if (r) {
+    vita2d_draw_fill_circle(x+r,y+r,r,top);
+    vita2d_draw_fill_circle(x+w-r,y+r,r,top);
+    vita2d_draw_fill_circle(x+r,y+h-r,r,bottom);
+    vita2d_draw_fill_circle(x+w-r,y+h-r,r,bottom);
+  }
+#endif
 }
 static void panel(int x, int y, int w, int h, int active, uint32_t accent) {
   roundbox(x - 2, y - 2, w + 4, h + 4, 13, blend(BG, accent, active ? 60 : 15),
@@ -51,6 +104,10 @@ static void panel(int x, int y, int w, int h, int active, uint32_t accent) {
 static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
                 int limit) {
   int right = x + limit;
+#ifndef HOST_UI
+  int slot = font == &small ? 0 : font == &body ? 1 : font == &title ? 2 : 3;
+  extern vita2d_texture *ui_atlases[4];
+#endif
   for (; *s; s++) {
     unsigned c = (unsigned char)*s;
     if (c < 32 || c > 126)
@@ -58,6 +115,7 @@ static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
     c -= 32;
     if (x + font->widths[c] > right)
       break;
+#ifdef HOST_UI
     for (int j = 0; j < font->h; j++)
       for (int i = 0; i < font->w; i++) {
         int px = x + i, py = y + j;
@@ -67,9 +125,44 @@ static void txt(int x, int y, const Font *font, uint32_t color, const char *s,
         if (a)
           fb[py * 960 + px] = blend(fb[py * 960 + px], color, a);
       }
+#else
+    if (ui_atlases[slot])
+      vita2d_draw_texture_tint_part(ui_atlases[slot], x, y,
+          (c % 16) * font->w, (c / 16) * font->h, font->w, font->h, color);
+#endif
     x += font->widths[c];
   }
 }
+#ifndef HOST_UI
+vita2d_texture *ui_atlases[4];
+int ui_gpu_init(void) {
+  const Font *fonts[4]={&small,&body,&title,&large};
+  for (int k=0;k<4;k++) {
+    const Font *f=fonts[k];
+    vita2d_texture *t=vita2d_create_empty_texture_format(
+        16*f->w,6*f->h,SCE_GXM_TEXTURE_FORMAT_P8_ABGR);
+    if (!t) { ui_gpu_fini(); return -1; }
+    ui_atlases[k]=t;
+    unsigned char *data=vita2d_texture_get_datap(t);
+    uint32_t *palette=vita2d_texture_get_palette(t);
+    unsigned stride=vita2d_texture_get_stride(t);
+    for (int a=0;a<256;a++) palette[a]=0x00ffffffu | ((uint32_t)a<<24);
+    for (int c=0;c<95;c++)
+      for (int y=0;y<f->h;y++)
+        memcpy(data+(c/16*f->h+y)*stride+(c%16)*f->w,
+            f->glyphs+(c*f->h+y)*f->w,f->w);
+    vita2d_texture_set_filters(t,SCE_GXM_TEXTURE_FILTER_POINT,
+                                 SCE_GXM_TEXTURE_FILTER_POINT);
+  }
+  return 0;
+}
+void ui_gpu_fini(void) {
+  for (int k=0;k<4;k++) {
+    if (ui_atlases[k]) vita2d_free_texture(ui_atlases[k]);
+    ui_atlases[k]=NULL;
+  }
+}
+#endif
 static void tc(char *s, size_t n, double t, int precise) {
   int ms = (int)(fmax(0, t) * 1000 + .5);
   if (precise)
@@ -77,62 +170,53 @@ static void tc(char *s, size_t n, double t, int precise) {
   else
     snprintf(s, n, "%02d:%02d", ms / 60000, ms / 1000 % 60);
 }
-static void play_icon(int x, int y, uint32_t c) {
-  for (int i = 0; i < 15; i++)
-    rect(x + i, y + i / 2, 1, 18 - i, c);
-}
-static void toggle(int x, int y, int on) {
-  roundbox(x, y, 44, 22, 11, on ? RGB(12, 152, 174) : RGB(52, 63, 82),
-           on ? RGB(10, 97, 120) : RGB(34, 44, 62));
-  roundbox(x + (on ? 24 : 3), y + 3, 16, 16, 8, on ? WHITE : MUTED,
-           on ? WHITE : MUTED);
-}
-static void wave_icon(int x, int y, uint32_t c) {
-  int heights[] = {10, 20, 32, 22, 14, 26, 12};
-  for (int i = 0; i < 7; i++)
-    roundbox(x + i * 6, y + (32 - heights[i]) / 2, 3, heights[i], 1, c, c);
-}
-static void fx_icon(int x, int y, int index, uint32_t c) {
-  for (int i = 0; i < 30; i++) {
-    int h;
-    if (index == 0) {
-      rect(x + i, y + i / 2, 2, 2, c);
-      rect(x + i, y + 15 - i / 2, 2, 2, c);
-    } else if (index == 1) {
-      h = (int)(8 * expf(-i * .07f) * sinf(i * .9f));
-      rect(x + i, y + 8 + h, 1, 2, c);
-    } else if (index == 2) {
-      h = (int)(15 * (1 - expf(-i * .13f)));
-      rect(x + i, y + 16 - h, 2, 2, c);
-    } else if (index == 3) {
-      h = i < 15 ? 12 : 5;
-      rect(x + i, y + 8 - h / 2, 1, h, c);
-    } else {
-      rect(x + i, y + (i < 15 ? 2 : 14), 1, 2, c);
-      if (i == 15)
-        rect(x + i, y + 2, 2, 14, c);
-    }
-  }
-}
 double ui_timeline_pre(const View *v) {
   return fmin(4, fmax(0, v->settings.start_a));
 }
 double ui_timeline_span(const View *v) {
   return ui_timeline_pre(v) + v->settings.duration + 4;
 }
-int ui_hit_test(int x, int y) {
-  if (x < 14 || x >= 946)
-    return -1;
-  if (y >= 47 && y < 150)
-    return x < 480 ? 0 : 1;
-  if (y >= 272 && y < 320)
-    return x < 330 ? 2 : x < 642 ? 3 : 4;
-  if (x < 548 && y >= 355 && y < 505)
-    return 5 + (y - 355) / 30;
-  if (x >= 562 && y >= 352 && y < 436)
-    return 12 + (y - 352) / 28;
-  if (y >= 448 && y < 496)
-    return x >= 756 ? 11 : x >= 562 ? 10 : -1;
+int ui_hit_test_for_tab(const View *v, int x, int y) {
+  if (x<10 || x>=950 || y<0 || y>=544) return -1;
+  if (y >= 6 && y < 47) {
+    if (v->songs[0] && y>=22 && x>=364 && x<470) return 160;
+    if (v->songs[1] && y>=22 && x>=844 && x<950) return 161;
+    return x < 470 ? 0 : x >= 490 ? 1 : -1;
+  }
+  if (y >= 318 && y < 365) {
+    if (x < 112) return 10;
+    if (x < 178) return 101; /* Stop */
+    if (x < 258) return 102; /* Replay */
+    if (x < 384) return 2;
+    if (x < 510) return 3;
+    if (x < 636) return 4;
+    if (x < 700) return 103; /* Zoom out */
+    if (x < 764) return 104; /* Zoom in */
+    if (x < 824) return 105; /* Fit */
+    return x < 950 ? 11 : -1;
+  }
+  if (y >= 371 && y < 410) return x < 322 ? 110 : x < 638 ? 111 : 112;
+  if (v->tab == 2) {
+    if (y >= 416 && y < 443 && x >= 14 && x < 942)
+      return 130 + (x - 14) / 116;
+    if (y >= 448 && y < 506 && x >= 14 && x < 946)
+      return 120 + (x - 14) / 188;
+    if (y >= 507 && y < 544)
+      return x < 68 ? 140 : x >= 884 ? 141 : x >= 722 ? 142 :
+             !v->auto_beatmatch && x >= 563 && x < 605 ? 153 :
+             !v->auto_beatmatch && x >= 665 && x < 707 ? 154 : -1;
+  } else if (v->tab == 1) {
+    if (y >= 420 && y < 490 && x >= 14 && x < 946)
+      return 120 + (x - 14) / 155;
+    if (y >= 497 && y < 541)
+      return x < 150 ? 150 : x >= 340 && x < 392 ? 151 :
+             x >= 466 && x < 518 ? 152 :
+             v->effect_index==5 && x>=550 && x<940 ? 163 :
+             v->settings.preset_id && !v->auto_beatmatch && x >= 710 && x < 762 ? 153 :
+             v->settings.preset_id && !v->auto_beatmatch && x >= 872 && x < 924 ? 154 : -1;
+  } else if (y>=507 && y<543 && x>=620 && x<940) return 162;
+  else if (y >= 420 && y < 504 && x >= 14 && x < 946)
+    return 120 + (x - 14) / 188;
   return -1;
 }
 int ui_key_test(int x, int y) {
@@ -150,155 +234,44 @@ int ui_key_test(int x, int y) {
   return r * 3 + c;
 }
 static void dim(void) {
+#ifdef HOST_UI
   for (int i = 0; i < 960 * 544; i++)
     fb[i] = blend(fb[i], BG, 190);
+#else
+  vita2d_draw_rectangle(0,0,960,544,(BG & 0x00ffffffu) | (190u<<24));
+#endif
 }
-void ui_draw(uint32_t *pixels, const View *v) {
-  fb = pixels;
-  for (int y = 0; y < 544; y++)
-    rect(0, y, 960, 1, blend(RGB(19, 24, 40), BG, y * 255 / 544));
-  wave_icon(19, 7, CYAN);
-  txt(72, 5, &title, WHITE, "Circuit FX Studio", 420);
-  roundbox(301, 11, 74, 22, 6, RGB(72, 35, 99), RGB(38, 25, 64));
-  txt(310, 12, &small, RGB(225, 160, 254), "BETA 1.7", 70);
-  txt(733, 13, &small, MUTED, "OFFLINE  /  WAV + MP3", 211);
-  rect(14, 40, 932, 1, EDGE);
-  char s[180], a[32];
-  for (int d = 0; d < 2; d++) {
-    int x = 14 + d * 474;
-    uint32_t c = d ? PINK : CYAN;
-    panel(x, 48, 458, 101, v->row == d, c);
-    roundbox(x + 12, 61, 65, 74, 8, blend(BG, c, 34), RGB(12, 20, 34));
-    txt(x + 32, 65, &large, c, d ? "B" : "A", 40);
-    for (int i = 0; i < 25; i++) {
-      int h = v->peaks[d][i * 17] * 18 / 32768;
-      rect(x + 19 + i * 2, 120 - h / 2, 1, h ? h : 1, c);
-    }
-    txt(x + 92, 57, &small, c,
-        d ? "TRACK B  /  INCOMING" : "TRACK A  /  OUTGOING", 335);
-    char name[256];
-    snprintf(name, sizeof(name), "%s",
-             v->songs[d] ? v->songs[d] : "Select a song");
-    char *ext = strrchr(name, '.');
-    if (ext)
-      *ext = 0;
-    txt(x + 92, 78, &title, WHITE, name, 350);
-    tc(a, sizeof(a), v->lengths[d], 0);
-    const char *format = "STEREO WAV";
-    const char *song_ext = v->songs[d] ? strrchr(v->songs[d], '.') : NULL;
-    if (song_ext && !strcasecmp(song_ext, ".mp3"))
-      format = "MP3 -> PCM WAV";
-    snprintf(s, sizeof(s), "%s    %s", v->songs[d] ? a : "No track loaded",
-             v->songs[d] ? format : "Tap to open your music");
-    txt(x + 93, 116, &small, MUTED, s, 350);
+static void draw_wave(const View *v, int deck, double pan, double span,
+                      int y, uint32_t color) {
+  double length = v->lengths[deck];
+  if (length <= 0) return;
+#ifndef HOST_UI
+  vita2d_color_vertex *bars=ui_vertex_batch(880*6);
+#endif
+  for (int i=0;i<880;i++) {
+    double t=v->wave_origin[deck]+pan+span*(i+0.5)/880.0;
+    int valid=t>=0 && t<length;
+    if (!valid) t=0;
+    int bin=(int)(t*(WAVE_BINS-1)/length);
+    int h=valid ? v->peaks[deck][bin]*47/32768 : 0;
+    if (valid && h<1) h=1;
+#ifdef HOST_UI
+    if (valid) rect(54+i,y-h,1,h*2+1,color);
+#else
+    if (bars) {
+      vita2d_color_vertex quad[6]={
+        {54+i,y-h,UI_VERTEX_Z,valid?color:0},{55+i,y-h,UI_VERTEX_Z,valid?color:0},
+        {54+i,y+h+1,UI_VERTEX_Z,valid?color:0},{55+i,y-h,UI_VERTEX_Z,valid?color:0},
+        {55+i,y+h+1,UI_VERTEX_Z,valid?color:0},{54+i,y+h+1,UI_VERTEX_Z,valid?color:0}};
+      memcpy(bars+i*6,quad,sizeof(quad));
+    } else if (valid) vita2d_draw_rectangle(54+i,y-h,1,h*2+1,color);
+#endif
   }
-  panel(14, 160, 932, 102, 0, EDGE);
-  double pre = ui_timeline_pre(v), span = ui_timeline_span(v);
-  int left = 54, start = left + (int)(880 * pre / span),
-      end = left + (int)(880 * (pre + v->settings.duration) / span);
-  for (int i = 0; i <= 8; i++) {
-    int x = left + i * 110;
-    rect(x, 184, 1, 70, RGB(31, 43, 60));
-    tc(a, sizeof(a), v->settings.start_a - pre + span * i / 8, 0);
-    txt(x - 14, 163, &small, MUTED, a, 60);
-  }
-  rect(start, 185, end - start, 68, RGB(42, 33, 72));
-  txt(24, 190, &body, CYAN, "A", 24);
-  txt(24, 224, &body, PINK, "B", 24);
-  for (int d = 0; d < 2; d++) {
-    uint32_t c = d ? PINK : CYAN;
-    int y = 207 + d * 33;
-    rect(left, y, 880, 1, RGB(43, 49, 69));
-    for (int i = 0; i < 880; i++) {
-      double rel = span * i / 880 - pre;
-      float gain = 1;
-      if (rel >= 0 && rel < v->settings.duration) {
-        float t = rel / v->settings.duration;
-        gain = d ? t : 1 - t;
-        if ((v->settings.effects & FX_QUICK_CUT) ||
-            !(v->settings.effects & FX_CROSSFADE))
-          gain = d ? (t >= .5f) : (t < .5f);
-      }
-      int h = (int)(v->timeline[d][i] * 13 / 32768.0f);
-      uint32_t col = blend(RGB(50, 43, 74), c, (int)(70 + 185 * gain));
-      if (h)
-        rect(left + i, y - h, 1, h * 2 + 1, col);
-    }
-  }
-  rect(start, 184, 2, 69, PINK);
-  rect(end, 184, 2, 69, PINK);
-  roundbox((start + end) / 2 - 65, 183, 130, 18, 4, RGB(85, 40, 117),
-           RGB(56, 30, 83));
-  snprintf(s, sizeof(s), "TRANSITION  %.1fs", v->settings.duration);
-  txt((start + end) / 2 - 57, 184, &small, WHITE, s, 118);
-  if (v->playing) {
-    int px = left + (int)(880 * fmin(v->play_position, span) / span);
-    rect(px, 184, 2, 70, WHITE);
-    roundbox(px - 3, 179, 8, 6, 2, WHITE, WHITE);
-  }
-  const char *labels[] = {"A CUE", "B CUE", "DURATION"};
-  double vals[] = {v->settings.start_a, v->settings.start_b,
-                   v->settings.duration};
-  for (int i = 0; i < 3; i++) {
-    int x = 14 + i * 316;
-    panel(x, 273, 300, 45, v->row == i + 2, i == 1 ? PINK : CYAN);
-    txt(x + 11, 280, &small, MUTED, labels[i], 78);
-    if (i < 2)
-      tc(s, sizeof(s), vals[i], 1);
-    else
-      snprintf(s, sizeof(s), "%.3f s", vals[i]);
-    txt(x + 99, 281, &body, WHITE, s, 162);
-    txt(x + 276, 281, &body, CYAN, "+", 20);
-  }
-  panel(14, 331, 534, 176, 0, EDGE);
-  txt(29, 336, &small, WHITE, "EFFECT STACK", 240);
-  txt(359, 336, &small, MUTED, "Tap to layer effects", 170);
-  const char *fx[] = {"Crossfade", "Echo Out", "Filter Sweep", "Bass Swap",
-                      "Quick Cut"};
-  const char *desc[] = {"Smooth blend", "250 ms delay", "Low-pass sweep",
-                        "Low-end exchange", "20 ms handoff"};
-  for (int i = 0; i < 5; i++) {
-    int y = 355 + i * 30, on = (v->settings.effects & (1u << i)) != 0;
-    if (v->row == 5 + i)
-      roundbox(22, y, 518, 28, 5, RGB(38, 58, 77), RGB(25, 38, 56));
-    else if (i % 2 == 0)
-      roundbox(22, y, 518, 28, 5, RGB(25, 33, 49), RGB(22, 29, 44));
-    fx_icon(31, y + 6, i, on ? CYAN : MUTED);
-    txt(79, y + 3, &body, on ? WHITE : MUTED, fx[i], 184);
-    txt(280, y + 6, &small, MUTED, desc[i], 190);
-    toggle(484, y + 3, on);
-  }
-  panel(562, 331, 384, 109, 0, EDGE);
-  txt(575, 336, &small, WHITE, "16 WAV SOUNDS + 64 RECIPES", 350);
-  const char *labels2[] = {"Browse WAV sounds + presets", "Effect BPM",
-                           "FX intensity"};
-  for (int i = 0; i < 3; i++) {
-    int y = 352 + i * 28;
-    roundbox(570, y, 368, 26, 5,
-             v->row == 12 + i ? RGB(46, 58, 80) : RGB(24, 31, 47),
-             RGB(17, 24, 38));
-    txt(584, y + 3, &body, WHITE, labels2[i], 265);
-    if (i == 0)
-      snprintf(s, sizeof(s), "OPEN");
-    else if (i == 1)
-      snprintf(s, sizeof(s), "%.0f", v->settings.bpm);
-    else
-      snprintf(s, sizeof(s), "%.0f%%", v->settings.intensity * 100);
-    txt(879, y + 6, &small, CYAN, s, 52);
-  }
-  panel(562, 448, 184, 48, v->row == 10, CYAN);
-  play_icon(577, 463, CYAN);
-  txt(605, 459, &title, CYAN, v->playing ? "Stop" : "Preview", 137);
-  panel(756, 448, 190, 48, v->row == 11, PINK);
-  rect(773, 460, 3, 15, v->ready ? PINK : MUTED);
-  rect(768, 474, 13, 2, v->ready ? PINK : MUTED);
-  txt(793, 459, &title, v->ready ? WHITE : MUTED, "Export", 144);
-  txt(18, 512, &small, WHITE, v->status, 700);
-  txt(741, 512, &small, MUTED, "START Preview   [] Replay", 205);
-  txt(18, 530, &small, MUTED,
-      "D-pad Navigate / Adjust     X Open / Toggle     L 1ms     R 10s     "
-      "SELECT Rescan     TRIANGLE Exit",
-      925);
+#ifndef HOST_UI
+  if (bars) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,bars,880*6);
+#endif
+}
+#include "dashboard.inc"
   if (v->progress >= 0) {
     dim();
     panel(192, 185, 576, 164, 1, CYAN);
@@ -325,7 +298,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
     panel(66, 44, 828, 456, 1, CYAN);
     txt(88, 58, &title, WHITE, "Your music", 500);
     txt(88, 92, &small, MUTED,
-        "ux0:data/CircuitFX/music    /    WAV or MP3 (decoded on load)", 760);
+        "ux0:data/CircuitFX/music    /    WAV or MP3 (PCM on preview)", 760);
     for (int i = 0; i < 10; i++)
       if (v->entries[i]) {
         int y = 132 + i * 31;
@@ -403,8 +376,10 @@ void ui_draw(uint32_t *pixels, const View *v) {
     }
     line[pos] = 0;
     txt(559, y, &small, MUTED, line, 350);
+    double shown_bpm=v->auto_beatmatch && v->track_bpm[0]>0 ?
+                     v->track_bpm[0] : v->settings.bpm;
     snprintf(s, sizeof(s), "%d beats  /  %.2f sec at %.0f BPM", p.beats,
-             p.beats * 60.0 / v->settings.bpm, v->settings.bpm);
+             p.beats * 60.0 / shown_bpm, shown_bpm);
     txt(559, 310, &body, CYAN, s, 350);
     snprintf(s, sizeof(s), "Echo %.2f beat   Feedback %.0f%%", p.delay_beats,
              p.feedback * 100);
@@ -444,12 +419,14 @@ void ui_draw(uint32_t *pixels, const View *v) {
              : v->editing == 2 ? "Track B cue"
              : v->editing == 3 ? "transition duration"
              : v->editing == 4 ? "effect BPM"
+             : v->editing == 6 ? "Track A BPM"
+             : v->editing == 7 ? "Track B BPM"
                                : "FX intensity");
     txt(264, 88, &title, WHITE, s, 430);
     roundbox(264, 128, 432, 51, 6, RGB(9, 17, 29), RGB(12, 23, 37));
     txt(278, 137, &large, CYAN, v->entry, 330);
     txt(617, 152, &small, MUTED,
-        v->editing == 4   ? "BPM"
+        v->editing == 4 || v->editing==6 || v->editing==7 ? "BPM"
         : v->editing == 5 ? "percent"
                           : "seconds",
         70);
@@ -467,13 +444,15 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(264, 443, &small, RGB(255, 160, 140),
         v->edit_error[0] ? v->edit_error
         : v->editing == 4
-            ? "60-200 BPM; effects timing, not automatic beatmatching"
+            ? "60-200 BPM; effects timing"
+        : v->editing==6 || v->editing==7
+            ? "70-180 BPM. Set your song's tempo manually."
         : v->editing == 5 ? "0-100%; controls effect strength, not track volume"
                           : "Enter seconds, e.g. 155.250 = 02:35.250",
         430);
   }
 }
-#ifdef HOST_UI
+#if defined(HOST_UI) && !defined(UI_TEST)
 int main(int argc, char **argv) {
   uint32_t *p = calloc(960 * 544, 4);
   View v = {0};
@@ -488,6 +467,10 @@ int main(int argc, char **argv) {
   v.songs[1] = "Midnight Circuit.wav";
   v.lengths[0] = 360;
   v.lengths[1] = 420;
+  v.wave_origin[0]=v.settings.start_a;
+  v.wave_origin[1]=v.settings.start_b;
+  v.wave_window=45;
+  v.wave_pan=-22.5;
   v.settings.bpm = 128;
   v.settings.intensity = 1;
   v.settings.sample_speed = 1.f;
@@ -495,18 +478,10 @@ int main(int argc, char **argv) {
   v.ready = 1;
   snprintf(v.status, sizeof(v.status),
            "Preview ready. Layer effects or export your mix.");
-  /* Synthetic fixture only; production waveforms always come from selected
-   * WAVs. */
+  /* Synthetic fixture only; production waveforms come from audio files. */
   for (int d = 0; d < 2; d++) {
-    for (int i = 0; i < 440; i++)
-      v.peaks[d][i] = 12000 + 9000 * sinf(i * .27f);
-    for (int i = 0; i < 880; i++) {
-      double rel = ui_timeline_span(&v) * i / 880 - ui_timeline_pre(&v);
-      v.timeline[d][i] =
-          (d ? rel >= 0 : rel < 15)
-              ? (int)(5000 + 16000 * fabs(sin(i * .17) * sin(i * .031 + d)))
-              : 0;
-    }
+    for (int i = 0; i < WAVE_BINS; i++)
+      v.peaks[d][i] = 3000 + 22000 * fabs(sin(i * .17) * sin(i * .013 + d));
   }
   if (argc > 1 && strcmp(argv[1], "editor") == 0) {
     v.editing = 1;
@@ -521,6 +496,15 @@ int main(int argc, char **argv) {
   }
   if (argc > 1 && strcmp(argv[1], "presets") == 0) {
     v.preset_browser = 1;
+    v.selected_preset = 65;
+  }
+  if (argc > 1 && strcmp(argv[1], "effects-tab") == 0) {
+    v.tab = 1;
+    v.effect_index = 1;
+  }
+  if (argc > 1 && strcmp(argv[1], "presets-tab") == 0) {
+    v.tab = 2;
+    v.preset_bank = 4;
     v.selected_preset = 65;
   }
   ui_draw(p, &v);

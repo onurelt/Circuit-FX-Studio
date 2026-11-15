@@ -14,6 +14,7 @@ typedef struct {
   uint32_t frames, offset;
 } Source;
 static int16_t ab[BLOCK * 2], bb[BLOCK * 2], mix[BLOCK * 2];
+static int16_t a_edge[441*2],b_edge[441*2];
 #define MAX_SFX_FRAMES (44100u * 12u)
 static int16_t sample_pcm[MAX_SFX_FRAMES * 2];
 #ifdef HOST_TEST
@@ -104,8 +105,9 @@ static int copy(Source *s, FILE *out, uint32_t start, uint32_t count) {
   }
   return 0;
 }
-int render_mix(const char *ap, const char *bp, const char *op,
-               const MixSettings *cfg, int preview, Progress cb) {
+int render_mix_layers(const char *ap,const char *bp,const char *avp,
+                      const char *bvp,const char *op,
+                      const MixSettings *cfg,int preview,Progress cb) {
   if (!cfg)
     return fail("Missing transition settings.");
   TransitionPreset preset;
@@ -127,7 +129,7 @@ int render_mix(const char *ap, const char *bp, const char *op,
     return fail("Invalid effect BPM or intensity.");
   double seconds = cfg->duration;
   unsigned effects = cfg->effects;
-  Source a = {0}, b = {0}, sample = {0};
+  Source a = {0}, b = {0}, av = {0}, bv = {0}, sample = {0};
   uint32_t sample_start = 0, sample_count = 0;
   FILE *out = 0;
   int rc = -1;
@@ -138,6 +140,11 @@ int render_mix(const char *ap, const char *bp, const char *op,
     return fail("Output cannot overwrite a song.");
   if (open_source(&a, ap) || open_source(&b, bp))
     goto finish;
+  if ((avp && (open_source(&av,avp) || av.frames!=a.frames)) ||
+      (bvp && (open_source(&bv,bvp) || bv.frames!=b.frames))) {
+    fail("Vocal overlap must match the selected song length.");
+    goto finish;
+  }
   if (!isfinite(seconds) || seconds < 0.1 || seconds > 120 ||
       !isfinite(cfg->start_a) || !isfinite(cfg->start_b) || cfg->start_a < 0 ||
       cfg->start_b < 0 || cfg->start_a > 48000 || cfg->start_b > 48000 ||
@@ -221,8 +228,16 @@ int render_mix(const char *ap, const char *bp, const char *op,
     fail("Cannot write WAV header.");
     goto finish;
   }
-  if (copy(&a, out, start, pre - start) || seek_frame(&a, pre) ||
-      seek_frame(&b, cue))
+  uint32_t edge=overlap<441?overlap:441;
+  if (avp && (seek_frame(&a,pre) || fread(a_edge,4,edge,a.f)!=edge)) {
+    fail("Cannot read original A for vocal edge.");goto finish;
+  }
+  if (bvp && (seek_frame(&b,cue+overlap-edge) ||
+              fread(b_edge,4,edge,b.f)!=edge)) {
+    fail("Cannot read original B for vocal edge.");goto finish;
+  }
+  if (copy(&a, out, start, pre - start) ||
+      seek_frame(avp?&av:&a,pre) || seek_frame(bvp?&bv:&b,cue))
     goto finish;
   memset(echo, 0, sizeof(echo));
   float low_a[2] = {0}, low_b[2] = {0}, filter[2] = {0};
@@ -255,7 +270,8 @@ int render_mix(const char *ap, const char *bp, const char *op,
     uint32_t n = overlap - at;
     if (n > BLOCK)
       n = BLOCK;
-    if (fread(ab, 4, n, a.f) != n || fread(bb, 4, n, b.f) != n) {
+    if (fread(ab, 4, n, avp?av.f:a.f) != n ||
+        fread(bb, 4, n, bvp?bv.f:b.f) != n) {
       fail("Input read failed during transition.");
       goto finish;
     }
@@ -310,6 +326,15 @@ int render_mix(const char *ap, const char *bp, const char *op,
       float echo_old[2] = {echo[echo_at * 2], echo[echo_at * 2 + 1]};
       for (int c = 0; c < 2; c++) {
         float x = ab[i * 2 + c], y = bb[i * 2 + c];
+        if (avp && at+i<edge) {
+          float fade=(at+i)/(float)edge;
+          x=a_edge[(at+i)*2+c]*(1-fade)+x*fade;
+        }
+        if (bvp && at+i>=overlap-edge) {
+          unsigned edge_at=at+i-(overlap-edge);
+          float fade=edge_at/(float)edge;
+          y=y*(1-fade)+b_edge[edge_at*2+c]*fade;
+        }
         if (mods & MOD_ROLL) {
           unsigned pos = at + i;
           if (pos < roll_frames)
@@ -404,9 +429,15 @@ finish:
     fclose(a.f);
   if (b.f)
     fclose(b.f);
+  if (av.f) fclose(av.f);
+  if (bv.f) fclose(bv.f);
   if (rc && !render_error[0])
     fail("Audio seek failed.");
   return rc;
+}
+int render_mix(const char *a,const char *b,const char *out,
+               const MixSettings *cfg,int preview,Progress cb) {
+  return render_mix_layers(a,b,NULL,NULL,out,cfg,preview,cb);
 }
 int inspect_wav(const char *path, uint32_t *frames, uint32_t *offset) {
   Source s = {0};

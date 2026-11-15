@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 1.7
+name: Build Circuit FX Studio Vita Beta 2.2
 on:
   push:
   workflow_dispatch:
@@ -13,6 +13,12 @@ jobs:
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_waveform.c -lm -o tests/mp3_waveform
+          tests/mp3_waveform tests/fixtures/test-stereo-44100.mp3
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
+          python3 tests/test_beatmatch.py
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
+          python3 tests/test_vocal.py
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
@@ -21,16 +27,20 @@ jobs:
         run: |
           gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
           gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert_asan
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool_asan
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
           MP3_IMPORT_EXE=tests/mp3_convert_asan ASAN_OPTIONS=detect_leaks=0 python3 tests/test_mp3.py
+          VOCAL_TOOL=tests/vocal_tool_asan ASAN_OPTIONS=detect_leaks=0 python3 tests/test_vocal.py
       - name: Compile and exercise production UI
         run: |
           gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui
           /tmp/ui
-          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc -Ivita tests/test_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-ui
+          gcc -std=c99 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -DHOST_UI -DUI_TEST -Isrc -Ivita tests/test_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-ui
           /tmp/test-ui
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Itests/mock -Isrc -Ivita tests/test_gpu_ui.c vita/ui.c src/presets.c -lm -o /tmp/test-gpu-ui
+          /tmp/test-gpu-ui
   build:
     needs: audio-tests
     runs-on: ubuntu-latest
@@ -44,16 +54,20 @@ jobs:
           tar -xjf /tmp/vitasdk.tar.bz2 -C "$RUNNER_TEMP/vita"
           echo "VITASDK=$RUNNER_TEMP/vita/vitasdk" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/vita/vitasdk/bin" >> "$GITHUB_PATH"
+      - name: Install Vita2D graphics library
+        run: |
+          "$VITASDK/bin/vdpm" refresh 2026.08
+          printf 'y\n' | "$VITASDK/bin/vdpm" install libvita2d
       - name: Compile installable VPK
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel 2
-          python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
+          python3 tests/check_vpk.py build/CircuitFX-Beta2.2.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta1.7
+          name: Circuit-FX-Studio-Vita-Beta2.2
           path: |
-            build/CircuitFX-Beta1.vpk
+            build/CircuitFX-Beta2.2.vpk
             README.md
             HARDWARE_TESTING.md
           if-no-files-found: error

@@ -1,6 +1,50 @@
-# Circuit FX Studio — native PS Vita Beta 1
+# Circuit FX Studio — native PS Vita Beta 2.2
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
+
+## Beta 2.2 — complete curve and menu drawing (02.02)
+
+The new Vita photo confirms Beta 2.1's solid panels, waveforms, buttons and Effects controls are visible. Its effect curves are still blank. Beta 2.2 replaces GPU line primitives with narrow, batched GPU triangles, using the same drawing path that successfully rendered the waveforms on Vita. A low-memory fallback draws small GPU rectangles. The three tabs now have simple icons inside their existing touch targets. The BPM badge says **SET BPM** if detection is unavailable; tap it to enter a manual value. Vocal Lite remains the sixth Effects card; Auto Beatmatch remains on Transitions.
+
+The native Vita2D call-path regression test checks aligned vertices, depth 0.5, nondegenerate triangles, both waveforms and every transition/effect curve. It exercises Transitions, Effects, Presets, the song and preset browsers, time editor, export confirmation and progress overlay. This still cannot prove the new triangle curves appear on real Vita hardware; install and send photos of all three tabs to finish that verification.
+
+## Beta 2.1 — Vita graphics repair and Vocal Reduction Lite (02.01)
+
+Beta 2.0 rendered text and some primitive shapes on real Vita hardware, but its custom vertex batches for panels, waveforms and effect curves appeared as scattered dots or disappeared. All custom vertices now use Vita2D's 16-byte aligned pool allocation and its sample's **0.5 depth**. If a batch cannot be allocated, its shapes fall back to Vita2D's GPU rectangles or lines. The app logs `TIMING gpu_fallbacks` at a clean exit. This is a targeted fix informed by the supplied Vita photos and the library's own sample; **a fresh on-device screenshot is still required** to confirm it on the user's Vita.
+
+In the Effects tab, tap **Vocal Lite**, then **Enabled**, adjust **Vocal Strength** in 10% steps, and tap **Target** to cycle Track A, Track B, Transition, or Both Tracks. The default target is Transition and the feature starts disabled. Preview prepares and caches the selected reduction offline, then the existing effects, beatmatching, playback and WAV export use that PCM. Cache hits are logged in `session.log`. Cancellation removes partial files. The original songs are never overwritten.
+
+For higher quality, copy matching **44.1 kHz stereo 16-bit PCM WAV stems** next to the original song in `ux0:data/CircuitFX/music/`. For `song.mp3` or `song.wav`, name them `song.instrumental.wav` and, optionally, `song.vocals.wav`. They must have exactly the same number of audio frames as the selected original or preview reports an error. The app uses the instrumental stem when present, blending from the original at 0% to the instrumental at 100%; without it, a vocals-only stem is subtracted by the chosen amount. These sidecars are hidden from the regular song picker. If neither stem exists, a lightweight high-passed center reduction subtracts mostly shared L/R content above the bass range. Transition target changes only the overlap; the original prefix and tail are preserved, with 10 ms edge blends.
+
+**Limitations:** Center reduction is not AI source separation. Centered drums, bass harmonics and instruments can also be attenuated; off-center, reverberant and doubled vocals often remain. Stem quality and alignment are the user's responsibility. Vocal preparation takes extra storage of roughly 10.1 MiB per song-minute per processed variant; transition-only plus beatmatching can cache two B versions. The existing 512 MiB eviction policy applies, although currently selected files remain pinned and can temporarily exceed it. Processing is offline and can be canceled; no extra DSP runs in the audio playback thread. Host tests validate samples and export identity, but stock-clock CPU, listening quality and system stability need on-device testing.
+
+## Beta 2.0 — automatic beatmatching (02.00)
+
+Both song bars show detected BPM from the cached, complete 8,192-bin waveform envelope. Tap a displayed BPM to enter a manual 70–180 BPM value; an asterisk marks an override. The **Auto Beatmatch** switch is on the Transitions tab and starts ON. If a song has no stable beat, enter its BPM manually or turn Auto off. The automatic detector estimates a regular pulse; syncopation, silence, tempo changes and half/double-time rhythms may require a manual value and cue adjustment.
+
+On Preview, Auto snaps each visible cue to its song's nearest estimated beat, matches Track B's tempo to A within 25%, and sets effect timing to A's BPM. The Track B waveform highlights the original source interval consumed by the tempo-adjusted overlap. Preset durations use A's detected or manual tempo. If you override BPM, the current cue anchors its beat grid. The adjusted cues remain visible and editable. With Auto off, original tempo and existing effect BPM controls behave as before.
+
+The pitch-preserving stereo time stretch is prepared **offline** on a cancellable worker, written to a reusable cache, then fed into the existing effect mixer. Preview and full WAV export use the same prepared audio and settings; playback does no live stretching. MP3s still use the existing decoded PCM cache for sample-accurate mixing. Beat analysis and matched audio persist across launches and share the 512 MiB size-limited cache. Each 44.1 kHz stereo 16-bit prepared song takes about 10.1 MiB per minute. `session.log` records beat cache hits and preparation time. Large tempo changes are refused instead of silently altering pitch; time stretching can still produce audible artifacts on difficult material, so listen to the preview before exporting.
+
+Host tests check BPM detection, stretch duration, preserved test-tone frequency, cancellation and preview/export identity. The VPK compiles and passes structural validation. Audio quality, responsiveness, CPU time and stability at stock clocks **still require a real Vita test**; follow the [hardware checklist](HARDWARE_TESTING.md) and share its `session.log` to compare before and after.
+
+## Beta 1.9 — waveform-first interface (01.09)
+
+The dashboard now follows the supplied dark cyan/magenta reference at native Vita resolution. Compact Track A/B selectors sit above a shared, zoomable two-track timeline that occupies about half the display. Drag the waveform to pan, pinch or use +/− to zoom, tap FIT for the full available song range, and drag each cue marker. Both songs' transition intervals and endpoints are shaded directly on their waveforms. The existing cached 8,192-bin envelopes are reused; switching tabs never decodes or rescans songs.
+
+Below the timeline are Preview/Stop/Replay, precise A/B cue and duration editors, zoom controls, Export, and three tabs. **Transitions** chooses one of the five core transition types; selecting Echo, Filter or Bass also retains the smooth crossfade handoff, while Quick Cut uses its existing 20 ms handoff. **Effects** lets you toggle and combine the five manual effects and change global effect intensity. **Presets** organizes all 128 existing recipes in eight categories, including 25 bundled WAV sounds and their reverse variants. Select a card, then Detail / Apply to audition WAV effects, adjust reverse/speed and apply the preset. Preset BPM is adjustable in its tab.
+
+The illustrated curves show the behavior of existing effects, not an editable curve parameter. The reference's per-effect Mix knob and album-art tiles are not implemented: the mixer exposes global effect intensity, while album art has no current loader. Seven advanced modifiers (gate, roll, ring, noise, dip, stereo echo and high-pass) remain available through their existing presets rather than separate manual toggles. No audio DSP or export path was changed.
+
+GPU batched waveforms and cached curve vertices keep drawing work bounded. Host layout/touch checks and audio tests pass; Vita touch feel, actual frame times, playback/export and shell stability still need an on-device stock-clock check.
+
+## Beta 1.8 — Vita2D, lazy MP3 import and full-song waveforms (01.08)
+
+The 960×544 interface now draws through Vita2D: GPU gradient panels, cached glyph atlases and batched waveform bars replace the software framebuffer. It redraws on state changes and uses the Vita's normal clock. Touch targets and all effect controls remain in place.
+
+Choosing an uncached MP3 now probes its length and shows the song without writing a full decoded WAV. A low-priority, cancellable worker builds a compact full-song waveform envelope directly from MP3 frames; WAVs use a sequential scan. Both 8,192-bin envelopes persist in the bounded cache and load without rescanning on later launches. Drag a waveform horizontally, pinch to zoom, or drag its white cue marker. Each deck keeps its own view. The envelope is an approximate visual peak summary; cue times and audio mixing retain millisecond values.
+
+The first preview of an uncached MP3 still creates a 44.1 kHz stereo PCM cache for the existing accurate mixer, then reuses it for later previews and export. This keeps the preview/export DSP path and sound quality identical to 01.07. Conversion can be cancelled with Circle or a touch on its dialog. MP3 duration probing can still scan a file without a VBR duration tag; cached PCM and envelopes are fast paths. UI CPU submission time, waveform build times, cache hits and render times are written to `ux0:data/CircuitFX/session.log`. Real frame time, pinch behavior, audio and suspend/close stability require a Vita check at stock clocks.
 
 ## Beta 1.7 — faster browsing and persistent audio cache (01.07)
 
@@ -66,12 +110,12 @@ The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebui
 
 ## Install
 
-1. Copy `CircuitFX-Beta1.vpk` to your homebrew-enabled Vita and install with VitaShell.
+1. Copy `CircuitFX-Beta2.2.vpk` to your homebrew-enabled Vita and install with VitaShell.
 2. Launch once to create the folders, then exit with Triangle.
 3. Put songs in `ux0:data/CircuitFX/music/` using VitaShell USB or FTP.
 4. Launch Circuit FX Studio. Select Track A and Track B.
 
-**Input:** Up to 512 `.wav` or `.mp3` files directly inside the music folder. WAV requires 44,100 Hz, stereo, signed 16-bit PCM. MP3 is decoded on selection and resampled to that format; mono/stereo 8–48 kHz files up to 64 MB are supported. Mono, 48 kHz, float and 24-bit WAV remain unsupported. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
+**Input:** Up to 512 `.wav` or `.mp3` files directly inside the music folder. WAV requires 44,100 Hz, stereo, signed 16-bit PCM. MP3 length and waveform are scanned on selection; preview decodes it into a reusable PCM cache and resamples to that format. Mono/stereo 8–48 kHz MP3s up to 64 MB are supported. Mono, 48 kHz, float and 24-bit WAV remain unsupported. Unsupported files show an error rather than playing incorrectly. Non-ASCII filename characters display as `?` but paths retain original bytes.
 
 ## Make a mix
 
@@ -103,7 +147,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta1.7` artifact from a successful run. The workflow pins the SDK archive and SHA-256. minimp3 is compiled into the app; it adds no runtime plugin.
+GitHub Actions runs host audio, vocal, beatmatch and MP3 import tests, sanitizer checks, native Vita2D call-path tests, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.2` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
 
 Local Vita build:
 
@@ -112,7 +156,7 @@ export VITASDK=/path/to/vitasdk
 export PATH="$VITASDK/bin:$PATH"
 cmake -S . -B build
 cmake --build build --parallel 2
-python3 tests/check_vpk.py build/CircuitFX-Beta1.vpk
+python3 tests/check_vpk.py build/CircuitFX-Beta2.2.vpk
 ```
 
 Host tests:
@@ -120,12 +164,16 @@ Host tests:
 ```sh
 gcc -std=c99 -O2 -Wall -Wextra -Werror -DHOST_TEST src/render.c src/wav.c src/presets.c -lm -o tests/render
 python3 tests/test_audio.py
+gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
+python3 tests/test_beatmatch.py
+gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
+python3 tests/test_vocal.py
 gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc -Ithird_party/minimp3 src/mp3_import.c src/wav.c tests/mp3_convert.c -lm -o tests/mp3_convert
 python3 tests/test_mp3.py
 ```
 
 The real UI can also render on a host with `gcc -O2 -DHOST_UI -Isrc vita/ui.c src/presets.c -lm -o /tmp/ui && /tmp/ui` (writes `ui-preview.ppm`). Font raster data is bundled; regeneration needs Pillow and Open Sans. See `assets/FONT-LICENSE.txt`.
 
-**Not included:** automatic tempo/beat matching, BPM detection, user-saved presets, album artwork, a draggable timeline, or background/locked-screen playback. The timeline shows sampled source peaks aligned to the cues; it is not a draggable or zoomable editor. Its colors illustrate the gain handoff, not a sample-accurate post-effect waveform. The reference image informs the dark cyan/magenta dashboard, but its extra controls are not shown as fake features.
+**Still not included:** user-saved presets, album artwork and background/locked-screen playback. The waveform shows source peaks and transition boundaries, not a post-effect waveform. Auto timing estimates beat phase from the envelope and does not detect musical downbeats or key.
 
 This is a compiled, host-tested **hardware-test beta**, not a claim of verified playback on a physical Vita. See [HARDWARE_TESTING.md](HARDWARE_TESTING.md). Diagnostic messages are recorded in `ux0:data/CircuitFX/session.log` (reset on launch).

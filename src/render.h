@@ -23,4 +23,9 @@ int inspect_wav(const char *path, uint32_t *frames, uint32_t *offset);
  */
 int render_mix(const char *a, const char *b, const char *out,
                const MixSettings *settings, int preview, Progress progress);
+/* Optional aligned source replacements used only for the overlap. The A
+ * prefix and B tail still come from a/b. NULL keeps the original source. */
+int render_mix_layers(const char *a,const char *b,const char *a_overlap,
+                      const char *b_overlap,const char *out,
+                      const MixSettings *settings,int preview,Progress progress);
 #endif

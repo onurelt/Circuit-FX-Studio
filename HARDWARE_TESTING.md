@@ -2,6 +2,27 @@
 
 No physical Vita was available during development. Host tests exercise the same C audio renderer linked into the native VPK. Compilation and package checks do not verify hardware audio, shell behavior, suspend/resume or storage throughput.
 
+## Version 02.02 complete interface check
+
+- Install over 02.01 at stock clocks. On **Transitions**, verify all five cyan/magenta curves are solid and buttons and Auto Beatmatch respond. On **Effects**, verify all six curves, six card touch targets, Vocal Lite enable/strength/target and the main waveform. On **Presets**, verify the eight categories, recipe cards, Detail / Apply, left/right page controls and effect BPM when Auto is off.
+- Open the song picker, preset detail browser, cue/BPM keypad editor, processing progress overlay and export confirmation. Verify panel fills, text, icon shapes, touch targets and dialog dismissal. Drag both cached waveforms, pinch zoom and adjust cue points. Photograph each tab and any failed menu; save `session.log` after Triangle exit for `TIMING gpu_fallbacks`.
+- Preview, stop, replay and export with vocal reduction and beatmatching. Compare visual cue and overlap positions to audio. Test cancellation, repeated navigation, LiveArea close and suspend/resume. These require the physical device; the automated GPU call-path test is not a substitute.
+
+## Version 02.01 graphics and vocal checks — required on real Vita
+
+- Install over 02.00 with VitaShell at stock clocks. Before choosing a song, verify the entire 960×544 dashboard: solid panels and buttons, all five transition curves, six Effects cards, three tabs, cyan and magenta labels, and no scattered dots. Load both songs and verify the full waveform bars, dragging, cue markers, transition shading, pinch zoom and modal backgrounds. Take a clear screenshot or photo of each tab. If anything is still missing, provide the screenshot and `ux0:data/CircuitFX/session.log` after a Triangle exit, including the `TIMING gpu_fallbacks` count.
+- In Effects, select Vocal Lite, toggle Enabled, set 0/50/100% and cycle A, B, Transition, Both. Preview and export each: at 0% audio should be unchanged; A/B targets should affect that whole song; Transition should affect the overlap while leaving the A prefix and B tail unchanged. Try all five effects, WAV sounds and Auto Beatmatch in combination.
+- Put `song.instrumental.wav` and `song.vocals.wav` beside `song.mp3` or `song.wav`, with exactly matching sample counts. Verify the instrumental stem is used; remove it and confirm vocals-only subtraction; remove both and check center reduction. Try a deliberately mismatched stem and ensure the error does not alter the selected song.
+- Cancel first-time vocal preparation with Circle and by tapping the progress dialog. Check `.part` cleanup, retry, repeat preview to see `TIMING vocal_cache_hit=1`, then exit and relaunch to verify persistence. Test low free space, repeated playback/replay/stop/export, PS/LiveArea close, and a 5–7 minute pair at stock clocks. Listen for boundary clicks, vocal artifacts and playback stutter. Capture timings before and after with the same songs.
+
+## Version 02.00 beatmatch checks
+
+- Install over 01.09 at normal clocks. Load two dance tracks with clearly different steady tempos (for example, 120 and 128 BPM). Confirm the displayed BPM for each deck, tap each BPM to set a manual value, and check the asterisk, edit cancel and reselect behavior. With Auto off, original speed and effect BPM controls must still work.
+- With Auto on, set cues between beats, Preview and confirm the visible cues snap to nearby beats. Check the blend sounds aligned and Track B's pitch stays recognizable despite the tempo change. Try manual BPM correction, two different presets, a WAV effect and all five stackable effects. Listen to transients for warbling, clicks or stereo imbalance.
+- Preview, Stop, Replay and export the same mix. Compare preview samples to the matching exported segment and verify the adjusted cue times and expected output duration. Repeat the preview; `session.log` should contain `beatmatch_cache_hit=1`. Relaunch and load the same pair; BPM and matched-audio caches should be reused.
+- Cancel waveform analysis, MP3 conversion, matched-song preparation and export, then retry. Verify no stale `.part` files, no altered source WAV/MP3, and another song still plays. Test unstable tempo and silent songs; enter BPM manually or disable Auto. Try a ratio beyond 25%, missing files and low free storage.
+- Capture `TIMING waveform_ms`, `beatmatch_ms`, `beatmatch_cache_hit`, preview/export times, `ui_draw_avg_us`, and total elapsed preview time before and after on the same Vita and songs. Check free storage and stability after switching songs, repeated playback, PS/LiveArea close and suspend/resume. Host timing is only a diagnostic and does not prove stock-clock performance.
+
 1. Install with VitaShell. Confirm icon and LiveArea launch, readable 960×544 layout, D-pad focus and touch targets.
 2. Use two 44.1 kHz/stereo/16-bit WAV songs. Verify browser names, durations, actual waveform peaks, millisecond editing and held-button repeat.
 3. Preview Crossfade, each other effect individually, and all five together. Check pitch/speed, both headphone channels, no buffer buzzing/dropouts, and expected cues.
@@ -71,3 +92,19 @@ When reporting a problem, include Vita model/firmware, source WAV format, select
 - Change cues/effects repeatedly while watching `session.log`. `TIMING timeline_ms` should stay small and cue/effect edits must not trigger waveform-file reads. Dashboard idle should not increment draw calls continuously; navigating should redraw promptly.
 - Verify `session.log` includes scan, song selection, import/cache, waveform, timeline, preview/export and final `ui_draw_*` timing entries. Capture it after a clean Triangle exit; launch resets the session log.
 - Exit while idle after a cache hit and after a canceled import. Relaunch, open another app, and confirm shutdown is clean and valid caches remain available.
+
+## Version 01.08 GPU and waveform checks
+
+- Install 01.08 over 01.07 and check the full 960×544 display, glyphs, gradients, touch targets, modal dialogs, LiveArea exit and restart on stock clocks. Compare `TIMING ui_draw_avg_us` and navigation feel with a saved 01.07 `session.log` from the same Vita and songs; host software timing is not comparable to Vita GPU time.
+- Select two long WAVs and two MP3s, with both decks using the same song and then different songs. Confirm both whole-song waveforms appear, cached waveform selection is faster on repeat, and idle UI does not redraw. Drag/pinch both rows and drag each white cue marker; verify time fields, precise edit, preview and export match the chosen cues.
+- Select a fresh MP3: song name/duration should appear before PCM conversion. Generate a preview to trigger conversion, cancel once, then retry. Relaunch and confirm `mp3_cache_hit` and `waveform_cache_hit` with no repeated full conversion.
+- Switch songs repeatedly while a waveform is still building; verify no stale waveform is shown for the newly selected song. Try a damaged MP3, missing source, nearly full storage and a forced close during a build. Relaunch, check no partial cache remains, then load/preview/export successfully.
+- Preview, replay and export with every effect and sample setting. Listen for stutter; check exported duration and sample content against 01.07. Test Triangle exit, PS/LiveArea close and suspend/resume after playback and during waveform generation. Save `session.log` before relaunch; attach it with Vita model and firmware for performance comparison.
+
+## Version 01.09 interface checks
+
+- Install over 01.08 at stock clocks. Verify both compact track bars open the music browser and show the actual names and durations. Waveforms should take about half the 960×544 display and remain visible on all three tabs.
+- Drag the waves in both rows, pinch in/out, use +/− and FIT, then drag both cue markers. Verify cue fields, transition shading/endpoints, precise keypad edits, and resulting preview/export timestamps. Try cues at 0, near song end, and songs of very different durations.
+- Tap each of five Transitions cards and compare its audio to the displayed behavior. In Effects, toggle each card on/off, combine effects, adjust global intensity and verify preview/export changes. BPM controls should appear only when relevant to a preset.
+- Browse every bank and four pages in Presets; select a card, open Detail / Apply, audition WAV effects, reverse/speed them and apply. Check selected recipe, BPM, cues, duration, preview and export. Test physical D-pad, Square, START, L/R tab changes, SELECT rescan and Triangle exit.
+- During playback, tap either Stop or Preview, then Replay and Export. Repeat navigation and song changes while a waveform is building; check cached waveform hits and absence of UI stalls. Test modal cancellation, low storage, PS/LiveArea close and re-launch. Capture `session.log` before relaunch for CPU submission timing.
