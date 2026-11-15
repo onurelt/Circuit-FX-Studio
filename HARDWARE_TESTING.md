@@ -2,6 +2,12 @@
 
 No physical Vita was available during development. Host tests exercise the same C audio renderer linked into the native VPK. Compilation and package checks do not verify hardware audio, shell behavior, suspend/resume or storage throughput.
 
+## Version 02.02 complete interface check
+
+- Install over 02.01 at stock clocks. On **Transitions**, verify all five cyan/magenta curves are solid and buttons and Auto Beatmatch respond. On **Effects**, verify all six curves, six card touch targets, Vocal Lite enable/strength/target and the main waveform. On **Presets**, verify the eight categories, recipe cards, Detail / Apply, left/right page controls and effect BPM when Auto is off.
+- Open the song picker, preset detail browser, cue/BPM keypad editor, processing progress overlay and export confirmation. Verify panel fills, text, icon shapes, touch targets and dialog dismissal. Drag both cached waveforms, pinch zoom and adjust cue points. Photograph each tab and any failed menu; save `session.log` after Triangle exit for `TIMING gpu_fallbacks`.
+- Preview, stop, replay and export with vocal reduction and beatmatching. Compare visual cue and overlap positions to audio. Test cancellation, repeated navigation, LiveArea close and suspend/resume. These require the physical device; the automated GPU call-path test is not a substitute.
+
 ## Version 02.01 graphics and vocal checks — required on real Vita
 
 - Install over 02.00 with VitaShell at stock clocks. Before choosing a song, verify the entire 960×544 dashboard: solid panels and buttons, all five transition curves, six Effects cards, three tabs, cyan and magenta labels, and no scattered dots. Load both songs and verify the full waveform bars, dragging, cue markers, transition shading, pinch zoom and modal backgrounds. Take a clear screenshot or photo of each tab. If anything is still missing, provide the screenshot and `ux0:data/CircuitFX/session.log` after a Triangle exit, including the `TIMING gpu_fallbacks` count.

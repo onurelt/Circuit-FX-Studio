@@ -1611,7 +1611,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 2.1 / 02.01\n");
+    fprintf(log, "Circuit FX Vita Beta 2.2 / 02.02\n");
     fclose(log);
   }
   if (vita2d_init() < 0 || ui_gpu_init() < 0) {

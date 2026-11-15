@@ -1,6 +1,12 @@
-# Circuit FX Studio — native PS Vita Beta 2.1
+# Circuit FX Studio — native PS Vita Beta 2.2
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
+
+## Beta 2.2 — complete curve and menu drawing (02.02)
+
+The new Vita photo confirms Beta 2.1's solid panels, waveforms, buttons and Effects controls are visible. Its effect curves are still blank. Beta 2.2 replaces GPU line primitives with narrow, batched GPU triangles, using the same drawing path that successfully rendered the waveforms on Vita. A low-memory fallback draws small GPU rectangles. The three tabs now have simple icons inside their existing touch targets. The BPM badge says **SET BPM** if detection is unavailable; tap it to enter a manual value. Vocal Lite remains the sixth Effects card; Auto Beatmatch remains on Transitions.
+
+The native Vita2D call-path regression test checks aligned vertices, depth 0.5, nondegenerate triangles, both waveforms and every transition/effect curve. It exercises Transitions, Effects, Presets, the song and preset browsers, time editor, export confirmation and progress overlay. This still cannot prove the new triangle curves appear on real Vita hardware; install and send photos of all three tabs to finish that verification.
 
 ## Beta 2.1 — Vita graphics repair and Vocal Reduction Lite (02.01)
 
@@ -104,7 +110,7 @@ The first package accidentally contained 2-bit indexed LiveArea PNGs. This rebui
 
 ## Install
 
-1. Copy `CircuitFX-Beta2.1.vpk` to your homebrew-enabled Vita and install with VitaShell.
+1. Copy `CircuitFX-Beta2.2.vpk` to your homebrew-enabled Vita and install with VitaShell.
 2. Launch once to create the folders, then exit with Triangle.
 3. Put songs in `ux0:data/CircuitFX/music/` using VitaShell USB or FTP.
 4. Launch Circuit FX Studio. Select Track A and Track B.
@@ -141,7 +147,7 @@ Exports are numbered `ux0:data/CircuitFX/exports/MIX0001.WAV`, etc. Existing fil
 
 ## Build and validation
 
-GitHub Actions runs host audio, vocal, beatmatch and MP3 import tests, sanitizer checks, UI compilation, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.1` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
+GitHub Actions runs host audio, vocal, beatmatch and MP3 import tests, sanitizer checks, native Vita2D call-path tests, VitaSDK build and VPK structure checks on every push. Download the `Circuit-FX-Studio-Vita-Beta2.2` artifact from a successful run. The workflow pins the SDK archive and SHA-256 and installs Vita2D at build time. minimp3 and Vita2D are compiled into the app; they add no runtime plugin.
 
 Local Vita build:
 
@@ -150,7 +156,7 @@ export VITASDK=/path/to/vitasdk
 export PATH="$VITASDK/bin:$PATH"
 cmake -S . -B build
 cmake --build build --parallel 2
-python3 tests/check_vpk.py build/CircuitFX-Beta2.1.vpk
+python3 tests/check_vpk.py build/CircuitFX-Beta2.2.vpk
 ```
 
 Host tests:

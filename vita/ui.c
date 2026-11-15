@@ -73,17 +73,20 @@ static void roundbox(int x, int y, int w, int h, int r, uint32_t top,
   }
   int edges[3][4] = {{x+r,y,w-2*r,h}, {x,y+r,r,h-2*r},
                      {x+w-r,y+r,r,h-2*r}};
+  int count=0;
   for (int k=0;v && k<3;k++) {
     int *e=edges[k];
+    if (e[2]<=0 || e[3]<=0) continue;
     uint32_t a=k ? blend(top,bottom,r*255/h) : top;
     uint32_t b=k ? blend(top,bottom,(h-r)*255/h) : bottom;
     vita2d_color_vertex quad[6] = {
       {e[0],e[1],UI_VERTEX_Z,a},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
       {e[0],e[1]+e[3],UI_VERTEX_Z,b},{e[0]+e[2],e[1],UI_VERTEX_Z,a},
       {e[0]+e[2],e[1]+e[3],UI_VERTEX_Z,b},{e[0],e[1]+e[3],UI_VERTEX_Z,b}};
-    memcpy(v+k*6,quad,sizeof(quad));
+    memcpy(v+count,quad,sizeof(quad));
+    count+=6;
   }
-  if (v) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,18);
+  if (v && count) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,v,count);
   if (r) {
     vita2d_draw_fill_circle(x+r,y+r,r,top);
     vita2d_draw_fill_circle(x+w-r,y+r,r,top);

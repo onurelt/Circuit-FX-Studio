@@ -21,8 +21,8 @@ foreach(SFX IN LISTS SFX_FILES)
   get_filename_component(SFX_NAME "${SFX}" NAME)
   list(APPEND SFX_ARGS FILE "${SFX}" "sfx/${SFX_NAME}")
 endforeach()
-vita_create_vpk(CircuitFX-Beta2.1.vpk CFXS00001 CircuitFX.self
-  VERSION 02.01 NAME "Circuit FX Studio"
+vita_create_vpk(CircuitFX-Beta2.2.vpk CFXS00001 CircuitFX.self
+  VERSION 02.02 NAME "Circuit FX Studio"
   ${SFX_ARGS}
   FILE assets/icon0.png sce_sys/icon0.png
   FILE assets/bg.png sce_sys/livearea/contents/bg.png

@@ -26,7 +26,9 @@ static void curve_card(int x,int y,int w,int h,int kind,uint32_t a,
                        uint32_t b) {
   prepare_curves();
 #ifndef HOST_UI
-  vita2d_color_vertex *vertices=ui_vertex_batch(2*2*40);
+  /* Vita GXM line primitives were invisible on hardware while triangles
+   * rendered correctly. Use two narrow triangles per curve segment. */
+  vita2d_color_vertex *vertices=ui_vertex_batch(2*39*6);
   int n=0;
 #endif
   for (int i=1;i<40;i++) for (int ch=0;ch<2;ch++) {
@@ -35,18 +37,46 @@ static void curve_card(int x,int y,int w,int h,int kind,uint32_t a,
     int y0=y+(255-curve_cache[kind][ch][i-1])*(h-3)/255;
     int y1=y+(255-curve_cache[kind][ch][i])*(h-3)/255;
 #ifdef HOST_UI
-    rect(x0,y0,2,2,ch?b:a);
-    rect(x1,y1,2,2,ch?b:a);
+    int steps=x1-x0;
+    for (int step=0;step<=steps;step++)
+      rect(x0+step,y0+(y1-y0)*step/(steps?steps:1),2,2,ch?b:a);
 #else
     if (vertices) {
-      vertices[n++]=(vita2d_color_vertex){x0,y0,UI_VERTEX_Z,ch?b:a};
-      vertices[n++]=(vita2d_color_vertex){x1,y1,UI_VERTEX_Z,ch?b:a};
-    } else vita2d_draw_line(x0,y0,x1,y1,ch?b:a);
+      float dx=x1-x0,dy=y1-y0;
+      float inv=1.5f/sqrtf(dx*dx+dy*dy);
+      float nx=-dy*inv,ny=dx*inv;
+      uint32_t color=ch?b:a;
+      vertices[n++]=(vita2d_color_vertex){x0+nx,y0+ny,UI_VERTEX_Z,color};
+      vertices[n++]=(vita2d_color_vertex){x1+nx,y1+ny,UI_VERTEX_Z,color};
+      vertices[n++]=(vita2d_color_vertex){x0-nx,y0-ny,UI_VERTEX_Z,color};
+      vertices[n++]=(vita2d_color_vertex){x1+nx,y1+ny,UI_VERTEX_Z,color};
+      vertices[n++]=(vita2d_color_vertex){x1-nx,y1-ny,UI_VERTEX_Z,color};
+      vertices[n++]=(vita2d_color_vertex){x0-nx,y0-ny,UI_VERTEX_Z,color};
+    } else {
+      int steps=x1-x0;
+      for (int step=0;step<=steps;step++)
+        vita2d_draw_rectangle(x0+step,
+            y0+(y1-y0)*step/(steps?steps:1),2,2,ch?b:a);
+    }
 #endif
   }
 #ifndef HOST_UI
-  if (vertices) vita2d_draw_array(SCE_GXM_PRIMITIVE_LINES,vertices,n);
+  if (vertices) vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,vertices,n);
 #endif
+}
+static void tab_icon(int x,int y,int kind,uint32_t color) {
+  if (kind==0) { /* waveform */
+    const int heights[]={6,13,20,10,17,8};
+    for (int i=0;i<6;i++) rect(x+i*5,y+10-heights[i]/2,3,heights[i],color);
+  } else if (kind==1) { /* three real effect controls */
+    for (int i=0;i<3;i++) {
+      int yy=y+2+i*7;
+      rect(x,yy,29,2,color);
+      rect(x+4+i*8,yy-3,5,8,color);
+    }
+  } else { /* stacked preset cards */
+    for (int i=0;i<3;i++) rect(x+3+i*4,y+2+i*6,24-i*8,3,color);
+  }
 }
 void ui_draw(uint32_t *pixels, const View *v) {
   fb=pixels;
@@ -67,7 +97,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
     if (v->songs[d]) {
       if (v->track_bpm[d]>0)
         snprintf(s,sizeof(s),"%.1f BPM%s",v->track_bpm[d],v->bpm_manual[d]?"*":"");
-      else snprintf(s,sizeof(s),"BPM ...");
+      else snprintf(s,sizeof(s),"SET BPM");
       txt(x+354,25,&small,c,s,101);
     }
   }
@@ -138,8 +168,10 @@ void ui_draw(uint32_t *pixels, const View *v) {
   flat_button(770,318,54,46,"FIT",CYAN,0);
   flat_button(830,318,120,46,"EXPORT",PINK,v->row==11);
   const char *tabs[]={"TRANSITIONS","EFFECTS","PRESETS"};
-  for (int i=0;i<3;i++)
+  for (int i=0;i<3;i++) {
     flat_button(10+316*i,371,310,39,tabs[i],i==0?CYAN:i==1?PINK:WHITE,v->tab==i);
+    tab_icon(10+316*i+272,380,i,i==0?CYAN:i==1?PINK:WHITE);
+  }
   const char *fx[]={"Crossfade","Echo Out","Filter Sweep","Bass Swap","Quick Cut","Vocal Lite"};
   const char *desc[]={"Blend A out, B in","Echo from A fades out","Filter sweeps the mix",
                      "Swap low frequencies","Fast 20ms handoff"};
