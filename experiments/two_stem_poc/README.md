@@ -42,3 +42,38 @@ Int8 should also be benchmarked rather than assumed to work.
 Reference docs:
 - https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html
 - https://github.com/k2-fsa/sherpa-onnx/blob/master/python-api-examples/offline-source-separation-spleeter.py
+
+## Measured host results — 2026-11-16 (NOT Vita measurements)
+
+All three runs successfully executed pretrained neural inference and generated
+two WAV stems from the same original **synthetic** music test. Results are
+specific to GitHub-hosted Linux runners (Python + sherpa-onnx + ONNX Runtime).
+
+| Model | Clip | Peak RSS | Elapsed | RTF |
+|---|---:|---:|---:|---:|
+| FP16 two-stem | 20 s | 625.7 MiB | 1.278 s | 0.064 |
+| INT8 two-stem | 20 s | 615.2 MiB | 1.015 s | 0.051 |
+| INT8 two-stem | 5 s | 361.7 MiB | 0.727 s | 0.145 |
+
+GitHub Actions logs:
+- https://github.com/onurelt/Circuit-FX-Studio/actions/runs/43957965142
+- https://github.com/onurelt/Circuit-FX-Studio/actions/runs/43958163499
+
+**Interpretation:** these memory figures exceed the Vita's ordinary 256 MiB
+user-memory budget, even for a 5-second INT8 clip. The 5-second run nearly
+fills the maximum extended 365 MiB main partition *without any UI/audio
+engine*. Linux peak RSS includes Python and desktop runtime overhead and
+cannot be directly equated to native Vita RAM; however, there is no evidence
+this Spleeter runtime fits. Large model activation buffers dominate; smaller
+weights alone are insufficient.
+
+**Audio-quality caveat:** the INT8 outputs had unusually large individual
+RMS relative to the input while reconstruction was relatively close, so it
+requires careful listening/level assessment using real licensed music before
+any production use. This test did **not** evaluate true vocal fidelity.
+
+**Decision:** do NOT merge this AI implementation into Vita Auto Mix.
+Next, search for *smaller-activation pretrained* architectures with usable
+weights and a demonstrable VitaSDK-compatible inference runtime. Do not
+treat a paper's parameter count alone as runtime feasibility. The main
+Auto Mix branch is unchanged.
