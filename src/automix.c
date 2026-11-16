@@ -134,8 +134,6 @@ static double cue_b(const uint16_t *peaks, unsigned bins, double length,
   for (double t = grid_at(0, phase, phrase, max_time);
        t <= window + .00001; t += phrase) {
     double before = energy(peaks, bins, length, t, consumed * .22);
-    double after = energy(peaks, bins, length, t + consumed * .48,
-                          consumed * .22);
     double late = energy(peaks, bins, length, t + consumed * .73,
                          consumed * .20);
     double rise = (late - before) / (1.0 + late + before);
