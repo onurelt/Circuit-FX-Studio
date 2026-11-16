@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Beta 2.2
+name: Build Circuit FX Studio Vita AutoMix Foundation
 on:
   push:
   workflow_dispatch:
@@ -17,6 +17,8 @@ jobs:
           tests/mp3_waveform tests/fixtures/test-stereo-44100.mp3
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/beatmatch.c src/render.c src/wav.c src/presets.c tests/beatmatch_tool.c -lm -o tests/beatmatch_tool
           python3 tests/test_beatmatch.py
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/automix.c tests/test_automix.c -lm -o /tmp/test-automix
+          /tmp/test-automix
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
           python3 tests/test_vocal.py
           python3 tests/test_audio.py
@@ -62,12 +64,12 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel 2
-          python3 tests/check_vpk.py build/CircuitFX-Beta2.2.vpk
+          python3 tests/check_vpk.py build/CircuitFX-AutoMix-Foundation.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-Beta2.2
+          name: Circuit-FX-Studio-Vita-AutoMix-Foundation
           path: |
-            build/CircuitFX-Beta2.2.vpk
+            build/CircuitFX-AutoMix-Foundation.vpk
             README.md
             HARDWARE_TESTING.md
           if-no-files-found: error
