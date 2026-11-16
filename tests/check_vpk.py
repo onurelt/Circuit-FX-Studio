@@ -9,7 +9,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
  for i in range(count):
   keyoff,fmt,size,maxsize,valoff=struct.unpack_from('<HHIII',data,20+i*16)
   key=data[keys+keyoff:].split(b'\0')[0].decode();fields[key]=data[values+valoff:values+valoff+size].rstrip(b'\0')
- assert fields['TITLE_ID']==b'CFXS00001';assert fields['APP_VER']==b'02.02'
+ assert fields['TITLE_ID']==b'CFXS00001';assert fields['APP_VER']==b'02.03'
  import io,wave,hashlib,json
  manifest=json.loads(z.read('sfx/manifest.json'))
  assert len(manifest)==25
