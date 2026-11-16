@@ -21,6 +21,8 @@ jobs:
           /tmp/test-automix
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
           python3 tests/test_vocal.py
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/prepared_stems.c src/render.c src/wav.c src/presets.c tests/prepared_stems_tool.c -lm -o tests/prepared_stems_tool
+          PREPARED_STEMS_TOOL=tests/prepared_stems_tool VOCAL_TOOL=tests/vocal_tool python3 tests/test_prepared_stems.py
           python3 tests/test_audio.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py

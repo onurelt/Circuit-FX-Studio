@@ -4,7 +4,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 project(CircuitFX C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
-add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c src/presets.c src/mp3_import.c src/beatmatch.c src/automix.c src/vocal.c)
+add_executable(CircuitFX vita/main.c vita/ui.c src/render.c src/wav.c src/presets.c src/mp3_import.c src/beatmatch.c src/automix.c src/vocal.c src/prepared_stems.c)
 target_include_directories(CircuitFX PRIVATE src vita third_party/minimp3)
 target_compile_options(CircuitFX PRIVATE -O2 -std=gnu11 -Wall -Wextra)
 # Keep a 64 KiB gap after the RX segment so vita-elf-create can append SCE

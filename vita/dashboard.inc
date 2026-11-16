@@ -46,9 +46,9 @@ void ui_draw(uint32_t *pixels, const View *v) {
     roundbox(24, 320, 912, 144, 12, RGB(38,31,55), RGB(18,27,43));
     txt(48, 342, &title, PINK, "NEURAL STEM SEPARATION UNAVAILABLE", 850);
     txt(48, 385, &body, WHITE,
-        "This build does not generate vocals, drums, bass or instrument stems.", 850);
+        "Auto Mix can use aligned .vocals.wav and .instrumental.wav sidecars.", 850);
     txt(48, 420, &small, MUTED,
-        "Prepared-stem import is not implemented. No simulated stems are shown.", 850);
+        "Four-stem AI, per-stem controls and Vocal Remover export are not implemented.", 850);
     flat_button(760, 486, 190, 44, "BACK HOME", PINK, 0);
     return;
   }
@@ -162,11 +162,11 @@ void ui_draw(uint32_t *pixels, const View *v) {
       txt(x + 14, 438, &small, MUTED,
           i == 0 ? "Seamless, natural blend" :
           i == 1 ? "Shorter handoff, energy focused" :
-                   "No stems: safe crossfade fallback", 270);
+                   "A vocals + B instrumental sidecars", 270);
     } else {
       txt(x + 14, 418, &small, MUTED, "Tap to generate for both songs", 270);
       txt(x + 14, 440, &small, MUTED,
-          i == 2 ? "Vocal separation is not available" : "Cached beat and waveform analysis", 270);
+          i == 2 ? "Prepared stems are optional" : "Cached beat and waveform analysis", 270);
     }
   }
 
@@ -177,7 +177,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   flat_button(466, 486, 222, 44, "REGENERATE", PINK, 0);
   txt(704, 491, &small, MUTED,
       v->mix_variation == AUTOMIX_VOCAL_BLEND
-          ? "Vocal Blend uses a clean fallback" : "Select a mix card to compare",
+          ? "Aligned sidecars or clean fallback" : "Select a mix card to compare",
       238);
 
   if (v->status[0] && v->progress < 0 && !v->confirm && !v->browser &&

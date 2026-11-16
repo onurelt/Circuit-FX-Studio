@@ -2,7 +2,7 @@
 
 ## Current result
 
-No neural separator is integrated into the production Vita app. No vocals, drums, bass, or instrument stems are synthesized or labeled as real. Prepared-stem import is not implemented in this build.
+No neural separator is integrated into the production Vita app. No vocals, drums, bass, or instrument stems are synthesized or labeled as real. Auto Mix can optionally consume externally prepared, sample-aligned `TrackA.vocals.wav` and `TrackB.instrumental.wav` sidecars for its Vocal Blend overlap. Both must be 44.1 kHz, stereo, 16-bit PCM and exactly match the corresponding decoded track length. This does not provide AI separation. The one-song Vocal Remover still lacks stem import, per-stem controls, and stem export.
 
 The existing Spleeter two-stem experiment was a Linux-host reference only. Recorded peak RSS was approximately 626 MiB for FP16/20 seconds, 615 MiB for INT8/20 seconds, and 362 MiB for INT8/5 seconds. Those measurements are not Vita measurements and cannot be compared directly with Vita partitions, but they are too high to justify bundling the Python/sherpa-onnx path. Do not repeat those Spleeter runs.
 

@@ -2,6 +2,7 @@
 #include "mp3_import.h"
 #include "beatmatch.h"
 #include "automix.h"
+#include "prepared_stems.h"
 #include "vocal.h"
 #include <math.h>
 #include <psp2/audioout.h>
@@ -319,7 +320,10 @@ static void scan(void) {
     if (!SCE_S_ISDIR(e.d_stat.st_mode) && count < MAX_SONGS &&
         (has_suffix(e.d_name, ".wav") || has_suffix(e.d_name, ".mp3")) &&
         !has_suffix(e.d_name,".instrumental.wav") &&
-        !has_suffix(e.d_name,".vocals.wav"))
+        !has_suffix(e.d_name,".vocals.wav") &&
+        !has_suffix(e.d_name,".drums.wav") &&
+        !has_suffix(e.d_name,".bass.wav") &&
+        !has_suffix(e.d_name,".other.wav"))
       snprintf(songs[count++], 256, "%s", e.d_name);
     memset(&e, 0, sizeof(e));
   }
@@ -1249,7 +1253,7 @@ static void select_mix_candidate(int variation) {
   view.wave_origin[1] = plan->mix.start_b;
   invalidate();
   if (plan->vocal_blend_fallback)
-    message("No prepared vocal stems. Vocal Blend uses a clean beatmatched fallback.");
+    message("Vocal Blend uses aligned sidecar stems when present; otherwise it falls back cleanly.");
   else if (variation == AUTOMIX_ENERGY)
     message("Energy candidate selected. Preview to hear the handoff.");
   else
@@ -1305,6 +1309,7 @@ static void preview(void) {
     overlap_paths[d][0]=0;
   }
   int vocal_active=view.vocal_enabled && view.vocal_strength>0;
+  int prepared_vocal_blend=0;
   for (int d=0;d<2;d++) {
     int wanted=vocal_active && (view.vocal_target==2 ||
             view.vocal_target==3 || view.vocal_target==d);
@@ -1313,6 +1318,19 @@ static void preview(void) {
     if (view.vocal_target==2)
       snprintf(overlap_paths[d],sizeof(overlap_paths[d]),"%s",vocal_cache_paths[d]);
     else snprintf(render_paths[d],sizeof(render_paths[d]),"%s",vocal_cache_paths[d]);
+  }
+  if (view.mix_variation==AUTOMIX_VOCAL_BLEND && !vocal_active) {
+    char vocal_a[512], instrumental_b[512];
+    int stems=prepared_vocal_handoff_paths(originals[0],paths[0],
+                originals[1],paths[1],vocal_a,sizeof(vocal_a),
+                instrumental_b,sizeof(instrumental_b));
+    if (stems==1) {
+      snprintf(overlap_paths[0],sizeof(overlap_paths[0]),"%s",vocal_a);
+      snprintf(overlap_paths[1],sizeof(overlap_paths[1]),"%s",instrumental_b);
+      prepared_vocal_blend=1;
+    }
+    logline(prepared_vocal_blend ? "AUTOMIX prepared_stems=1" :
+                                      "AUTOMIX prepared_stems=0 fallback=1");
   }
   if (prepare_match(render_paths[1],ratio,matched_path)) return;
   snprintf(render_paths[1],sizeof(render_paths[1]),"%s",matched_path);
@@ -1343,6 +1361,10 @@ static void preview(void) {
   ready = view.ready = 1;
   if (play())
     message("Audio playback failed. Square retries.");
+  else if (view.mix_variation==AUTOMIX_VOCAL_BLEND)
+    message(prepared_vocal_blend ?
+      "Preview ready. Aligned supplied vocal and instrumental stems were used." :
+      "Preview ready. No aligned stems; clean Vocal Blend fallback used.");
   else
     message("Preview ready. Export when satisfied.");
 }

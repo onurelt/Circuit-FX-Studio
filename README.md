@@ -1,10 +1,12 @@
 ## Current development build — Auto Mix candidate workflow
 
-This development build replaces the old Transitions / Effects / Presets tabs with a focused two-track Auto Mix screen. It offers three generated transition plans: Smooth (long crossfade), Energy (shorter energy-focused handoff), and Vocal Blend. Vocal Blend is clearly a clean-crossfade fallback because no prepared vocal stems are available. Beat and 16-beat phrase alignment are estimates derived from cached waveform envelopes, followed by the existing bass-swap DSP. The app does not perform key analysis, vocal recognition, or semantic section detection.
+This development build replaces the old Transitions / Effects / Presets tabs with a focused two-track Auto Mix screen. It offers three generated transition plans: Smooth (long crossfade), Energy (shorter energy-focused handoff), and Vocal Blend. Vocal Blend uses aligned externally prepared sidecar stems when available and otherwise falls back to a clean crossfade. Beat and 16-beat phrase alignment are estimates derived from cached waveform envelopes, followed by the existing bass-swap DSP. The app does not perform key analysis, vocal recognition, or semantic section detection.
+
+For a prepared Vocal Blend, place `<Track A basename>.vocals.wav` beside the selected Track A file and `<Track B basename>.instrumental.wav` beside Track B in `ux0:data/CircuitFX/music`. Both sidecars must be 44.1 kHz, stereo, 16-bit PCM WAVs with exactly the same decoded frame count as their song. Misaligned, missing or invalid sidecars trigger the clean-crossfade fallback.
 
 The Auto Mix screen keeps both waveforms, cue positioning, beatmatch control, preview, replay, stop and WAV export. Selecting a candidate invalidates the previous preview; export requires rendering the selected settings first. Regenerate advances the phrase-search offset to propose another set of cues.
 
-VOCAL REMOVER remains a one-song entry point, but real neural separation is **not implemented**. This build generates no fake vocals, drums, bass, or instrument stems. The screen states that prepared-stem import is also not implemented. The older Vocal Lite filter is hidden from this simplified interface and must not be described as AI separation.
+VOCAL REMOVER remains a one-song entry point, but real neural separation is **not implemented**. This build generates no fake vocals, drums, bass, or instrument stems. Auto Mix Vocal Blend can use aligned external two-stem sidecars. The one-song Vocal Remover still has no prepared-stem import, per-stem controls, or stem export. The older Vocal Lite filter is hidden from this simplified interface and must not be described as AI separation.
 
 Automated host tests and the VitaSDK build run in GitHub Actions. They do not replace physical PS Vita verification. AI model feasibility and known blockers are documented in [docs/AI_FEASIBILITY.md](docs/AI_FEASIBILITY.md).
 
