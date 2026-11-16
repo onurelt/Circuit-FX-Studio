@@ -169,7 +169,7 @@ int automix_plan_variation(const uint16_t *a, const uint16_t *b,
       !isfinite(seconds_a) || !isfinite(seconds_b) ||
       seconds_a < 8 || seconds_b < 8 ||
       seconds_a > 48000 || seconds_b > 48000 ||
-      variation < AUTOMIX_SMOOTH || variation >= AUTOMIX_VARIATION_COUNT)
+      (int)variation < 0 || variation >= AUTOMIX_VARIATION_COUNT)
     return -1;
 
   memset(out, 0, sizeof(*out));
