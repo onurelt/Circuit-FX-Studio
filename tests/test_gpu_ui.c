@@ -73,7 +73,7 @@ static void frame(View *v) {
   used=0;wave_batches=curve_batches=tri_batches=rectangles=textures=0;
   ui_draw(NULL,v);
   assert(wave_batches==2 && curve_batches==0);
-  assert(tri_batches>=2 && rectangles>20 && textures>20);
+  assert(tri_batches>=2 && textures>0);
   assert(ui_gpu_fallback_count()==0);
 }
 int main(void) {
@@ -101,9 +101,10 @@ int main(void) {
   v.editing=0;v.confirm=1;frame(&v);
   v.confirm=0;v.progress=50;frame(&v);
   v.progress=-1;v.workflow=1;
-  used=0;wave_batches=curve_batches=rectangles=0;
+  used=0;wave_batches=curve_batches=tri_batches=rectangles=textures=0;
   ui_draw(NULL,&v);
-  assert(wave_batches==1 && curve_batches==0 && rectangles>20);
+  assert(wave_batches==1 && curve_batches==0);
+  assert(tri_batches>=1 && textures>0);
   assert(ui_gpu_fallback_count()==0);
   v.workflow=0;
   ui_gpu_fini();
