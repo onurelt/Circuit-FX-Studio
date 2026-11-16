@@ -2,7 +2,7 @@
 
 ## Current result
 
-No neural separator is integrated into the production Vita app. No vocals, drums, bass, or instrument stems are synthesized or labeled as real. Auto Mix can optionally consume externally prepared, sample-aligned `TrackA.vocals.wav` and `TrackB.instrumental.wav` sidecars for its Vocal Blend overlap. Both must be 44.1 kHz, stereo, 16-bit PCM and exactly match the corresponding decoded track length. This does not provide AI separation. The one-song Vocal Remover still lacks stem import, per-stem controls, and stem export.
+No neural separator is integrated into the production Vita app. No vocals, drums, bass, or instrument stems are synthesized or labeled as real. Auto Mix can optionally consume externally prepared, sample-aligned `TrackA.vocals.wav` and `TrackB.instrumental.wav` sidecars for its Vocal Blend overlap. Both must be 44.1 kHz, stereo, 16-bit PCM and exactly match the corresponding decoded track length. This does not provide AI separation. The one-song Vocal Remover accepts externally prepared four-stem sidecars and mixes, auditions, mutes/solos, adjusts gain and exports them. It does not separate audio.
 
 The existing Spleeter two-stem experiment was a Linux-host reference only. Recorded peak RSS was approximately 626 MiB for FP16/20 seconds, 615 MiB for INT8/20 seconds, and 362 MiB for INT8/5 seconds. Those measurements are not Vita measurements and cannot be compared directly with Vita partitions, but they are too high to justify bundling the Python/sherpa-onnx path. Do not repeat those Spleeter runs.
 
@@ -36,3 +36,18 @@ A real proof of concept still needs all of these gates:
 5. Test cancellation and repeated use on physical Vita hardware.
 
 Until those measurements pass, Auto Mix uses cached BPM/energy analysis and ordinary beatmatched crossfades. Vocal Blend is displayed as a fallback and does not claim to recognize or isolate vocals.
+
+## Follow-up assessment — November 16, 2026
+
+A practical small open model family is Open-Unmix UMX-HQ. The four MIT-licensed ONNX target graphs currently published by MixDirective are about 35.6 MB each (about 142.5 MB combined). Each network is a bidirectional LSTM over a 44.1 kHz stereo magnitude spectrogram with shape `[1, 2, 2049, frames]`, FFT 4096, hop 1024. The UMX-HQ model card reports laptop CPU runs, not Vita timings. Four outputs require four target networks and STFT/mask/iSTFT work; loading them sequentially could reduce resident weight memory, but does not reduce compute or activation buffers. The combined package size is not an estimate of peak RAM.
+
+UVR MDX-Net KARA 2 is a 52,786,726-byte, 13.19-million-parameter MIT ONNX graph. Its published contract expects an isolated vocal input, a complex spectrogram of `[1, 4, 2048, 256]`, and host-side STFT/chunking/overlap-add. It is a lead/backing vocal split stage, not a general full-mix four-stem model. Its model card reports a 10.87 GMAC convolution dispatch per chunk for its WebGPU layout; this is not a Vita CPU measurement.
+
+ONNX Runtime's official build documentation calls Linux ARM32v7 support experimental. That is not a VitaSDK target. The Vita project has no ONNX runtime, no verified ARMv7-compatible model operator build, and no model activation or inference benchmark on the console. Previous Spleeter measurements remain the only measured memory results: ~626 MiB FP16/20 s, ~615 MiB INT8/20 s, and ~362 MiB INT8/5 s on Linux. UMX/MDX Vita working RAM, CPU time, quantized quality, and reconstruction error are still unmeasured. Therefore there is no valid native AI POC or production separator in this VPK; this is a technical gate, not evidence that every possible small model is impossible.
+
+This build implements the honest offline fallback: users can provide already separated, aligned WAV sidecars and mix them locally. It never labels Vocal Lite or waveform energy as AI separation.
+
+Source records for the model assessment:
+- Open-Unmix UMX-HQ vocals, drums, bass and other ONNX exports: https://huggingface.co/MixDirective
+- UVR-MDX-NET KARA 2 model card and host contract: https://huggingface.co/musetric/uvr-mdxnet-kara2-onnx
+- ONNX Runtime ARM32v7 build guidance: https://onnxruntime.ai/docs/build/inferencing.html

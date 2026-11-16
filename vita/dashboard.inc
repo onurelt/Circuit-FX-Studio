@@ -30,26 +30,60 @@ void ui_draw(uint32_t *pixels, const View *v) {
   if (v->workflow == 1) {
     roundbox(10, 5, 730, 39, 6, RGB(24,35,52), RGB(15,25,39));
     txt(24, 8, &small, CYAN, "VOCAL REMOVER", 160);
-    txt(24, 23, &body, WHITE, v->songs[0] ? v->songs[0] : "Select one song", 570);
+    txt(24, 23, &body, WHITE,
+        v->songs[0] ? v->songs[0] : "Select one song", 560);
     tc(a, sizeof(a), v->lengths[0], 0);
-    txt(630, 12, &small, MUTED, v->songs[0] ? a : "OPEN", 90);
+    txt(620, 12, &small, MUTED, v->songs[0] ? a : "OPEN", 100);
     flat_button(760, 5, 190, 39, "HOME", PINK, 0);
-    rect(10, 52, 940, 244, RGB(14,25,39));
-    txt(24, 60, &large, CYAN, "TRACK A", 180);
-    if (v->lengths[0] > 0) {
-      draw_wave(v, 0, -v->wave_origin[0], fmax(5, v->lengths[0]), 178, CYAN);
-      tc(a, sizeof(a), v->lengths[0], 0);
-      txt(820, 60, &small, MUTED, a, 100);
-    } else {
-      txt(270, 160, &body, MUTED, "Choose one song from ux0:data/CircuitFX/music", 500);
+
+    txt(22, 55, &small, MUTED,
+        "Import separated 44.1 kHz stereo WAV sidecars. Vita does not run AI separation.", 900);
+    const char *names[4] = {"VOCALS", "DRUMS", "BASS", "OTHER"};
+    const uint32_t colors[4] = {PINK, RGB(255,177,72), CYAN, RGB(164,139,255)};
+    for (int i = 0; i < 4; ++i) {
+      int y = 88 + i * 66;
+      unsigned bit = 1u << i;
+      int loaded = (v->stem_present & bit) != 0;
+      int muted = (v->stem_mute_mask & bit) != 0;
+      int solo = v->stem_solo == i;
+      roundbox(14, y, 932, 58, 8,
+               loaded ? RGB(23,36,53) : RGB(20,29,42),
+               loaded ? RGB(17,27,42) : RGB(14,21,33));
+      txt(28, y + 6, &body, loaded ? colors[i] : MUTED, names[i], 150);
+      txt(28, y + 29, &small, loaded ? MUTED : RGB(111,125,142),
+          loaded ? "READY" : "MISSING", 150);
+
+      int gain = (int)fmax(0, fmin(100, v->stem_gain[i] * 50));
+      roundbox(190, y + 22, 244, 12, 6, RGB(12,21,34), RGB(12,21,34));
+      if (gain > 0)
+        roundbox(190, y + 22, 244 * gain / 100, 12, 6, colors[i], colors[i]);
+      roundbox(190 + 244 * gain / 100 - 5, y + 17, 10, 22, 5,
+               WHITE, RGB(213,225,238));
+      snprintf(s, sizeof(s), "%d%%", (int)lround(v->stem_gain[i] * 100));
+      txt(444, y + 18, &small, WHITE, s, 58);
+
+      flat_button(510, y + 8, 74, 42, muted ? "MUTED" : "MUTE",
+                  muted ? MUTED : WHITE, muted);
+      flat_button(590, y + 8, 74, 42, solo ? "SOLO ON" : "SOLO",
+                  solo ? colors[i] : WHITE, solo);
+      flat_button(670, y + 8, 122, 42, "LISTEN", colors[i], 0);
+      flat_button(798, y + 8, 138, 42, "EXPORT WAV", colors[i], 0);
     }
-    roundbox(24, 320, 912, 144, 12, RGB(38,31,55), RGB(18,27,43));
-    txt(48, 342, &title, PINK, "NEURAL STEM SEPARATION UNAVAILABLE", 850);
-    txt(48, 385, &body, WHITE,
-        "Auto Mix can use aligned .vocals.wav and .instrumental.wav sidecars.", 850);
-    txt(48, 420, &small, MUTED,
-        "Four-stem AI, per-stem controls and Vocal Remover export are not implemented.", 850);
-    flat_button(760, 486, 190, 44, "BACK HOME", PINK, 0);
+
+    flat_button(14, 368, 220, 48, "PREVIEW MIX", CYAN, 0);
+    flat_button(242, 368, 112, 48, "STOP", WHITE, 0);
+    flat_button(362, 368, 220, 48, "EXPORT MIX", PINK, 0);
+    flat_button(590, 368, 190, 48, "RESCAN STEMS", WHITE, 0);
+    flat_button(788, 368, 158, 48, "HOME", PINK, 0);
+    txt(22, 430, &small, MUTED,
+        "Place Track.vocals.wav, Track.drums.wav, Track.bass.wav and Track.other.wav beside the song in music/.", 920);
+    txt(22, 454, &small, MUTED,
+        "Mute/Solo affect Preview Mix. Listen and Export WAV operate on that stem only.", 920);
+    if (!v->stem_present)
+      txt(22, 478, &small, RGB(255,177,72),
+          "No aligned separated stems found. This screen does not create or fake stems.", 920);
+    else if (v->status[0] && v->progress < 0)
+      txt(22, 478, &small, CYAN, v->status, 920);
     return;
   }
 

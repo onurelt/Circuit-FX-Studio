@@ -29,6 +29,20 @@ int main(void) {
   assert(ui_hit_test_for_tab(&v, 0, 0) == -1);
   assert(ui_hit_test_for_tab(&v, 960, 544) == -1);
 
+  v.workflow = 1;
+  v.stem_solo = -1;
+  for (int i = 0; i < 4; ++i) v.stem_gain[i] = 1.0f;
+  const int stem_controls[][3] = {
+      {100, 20, 0}, {800, 20, 175},
+      {100, 110, 460}, {200, 110, 500},
+      {550, 110, 400}, {620, 110, 401}, {720, 110, 402}, {840, 110, 403},
+      {550, 170, 404}, {620, 170, 405}, {720, 170, 406}, {840, 170, 407},
+      {100, 400, 440}, {300, 400, 441}, {450, 400, 442},
+      {700, 400, 443}, {850, 400, 175}};
+  for (size_t i = 0; i < sizeof(stem_controls) / sizeof(stem_controls[0]); ++i)
+    assert(ui_hit_test_for_tab(&v, stem_controls[i][0], stem_controls[i][1]) ==
+           stem_controls[i][2]);
+  v.workflow = 0;
   for (int i = 0; i < 12; ++i)
     assert(ui_key_test(300 + (i % 3) * 144, 210 + (i / 3) * 48) == i);
   assert(ui_key_test(320, 415) == 12);
@@ -67,6 +81,12 @@ int main(void) {
     assert(memory[0] == 0x12345678 &&
            memory[960 * 544 + 1] == 0x87654321);
   }
+  v.workflow = 1;
+  v.stem_present = 5;
+  v.stem_solo = -1;
+  for (int i = 0; i < 4; ++i) v.stem_gain[i] = .75f;
+  ui_draw(memory + 1, &v);
+  v.workflow = 0;
   v.home_screen = 1;
   ui_draw(memory + 1, &v);
   v.home_screen = 0;

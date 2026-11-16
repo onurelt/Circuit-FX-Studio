@@ -61,6 +61,13 @@ static double estimate_bar_phase(const uint16_t *peaks, unsigned bins,
   return phase + best * beat;
 }
 
+static double envelope_spread(double a, double b, double c) {
+  double low = fmin(a, fmin(b, c));
+  double high = fmax(a, fmax(b, c));
+  double mean = (a + b + c) / 3.0;
+  return (high - low) / (1.0 + mean);
+}
+
 static double grid_at(double time, double phase, double step, double max_time) {
   if (!(step > 0) || !isfinite(step)) return limit(time, 0, max_time);
   double candidate = phase + round((time - phase) / step) * step;
@@ -95,19 +102,23 @@ static double cue_a(const uint16_t *peaks, unsigned bins, double length,
     double tail = energy(peaks, bins, length, t + overlap * .65,
                          overlap * .25);
     double contrast = fabs(first - before) / (1.0 + first + before);
+    double volatility = envelope_spread(first, middle, tail);
     double closeness = 1.0 - fabs(t - desired) / (1.0 + max_time - lower);
     double score;
     if (variation == AUTOMIX_ENERGY) {
-      /* Enter on a full outgoing phrase, then prefer a controlled fall. */
+      /* Favor a strong outgoing section that resolves through the overlap. */
       double controlled_drop = (first + .35 * middle - tail) /
                                (1.0 + first + middle + tail);
-      score = .34 * closeness + .66 * controlled_drop;
+      double launch = first / (1.0 + first);
+      score = .18 * closeness + .52 * controlled_drop + .30 * launch;
     } else if (variation == AUTOMIX_VOCAL_BLEND) {
-      /* Without stems, choose a lower-density opening for a gentle handoff. */
+      /* Energy density is only a proxy; this does not detect vocals. */
       double density = (first + middle) * .5;
       score = .38 * closeness + .62 / (1.0 + density);
     } else {
-      score = .58 * closeness + .42 * (1.0 - contrast);
+      /* Smooth prefers a stable envelope and avoids abrupt changes. */
+      score = .42 * closeness + .32 * (1.0 - contrast) +
+              .26 / (1.0 + volatility);
     }
     if (score > best) {
       best = score;
@@ -141,13 +152,14 @@ static double cue_b(const uint16_t *peaks, unsigned bins, double length,
     double contrast = fabs(late - before) / (1.0 + late + before);
     double score;
     if (variation == AUTOMIX_ENERGY) {
-      /* Prefer a quieter incoming section that builds through the handoff. */
-      score = .74 * rise + .26 * early;
+      /* Start below the outgoing energy and build toward the drop. */
+      score = .55 * rise + .20 * early + .25 / (1.0 + before);
     } else if (variation == AUTOMIX_VOCAL_BLEND) {
-      /* No voice classifier exists: favor low-density entry, then some rise. */
+      /* Low energy is a conservative fallback, never vocal recognition. */
       score = .55 / (1.0 + before) + .30 * rise + .15 * early;
     } else {
-      score = .58 * rise + .27 * early + .15 * (1.0 - contrast);
+      /* Smooth favors a gentle rise without a sudden level jump. */
+      score = .48 * rise + .27 * early + .25 * (1.0 - contrast);
     }
     if (score > best) {
       best = score;
@@ -173,9 +185,14 @@ int automix_plan_variation(const uint16_t *a, const uint16_t *b,
     return -1;
 
   memset(out, 0, sizeof(*out));
+  /* A plausible number alone is not enough to warp the song. Require the
+   * envelope autocorrelation to clear its measured reliability floor; the UI
+   * marks manually entered BPM as confidence 1.0. */
   double bpm_a = beat_a && isfinite(beat_a->bpm) &&
+                 isfinite(beat_a->confidence) && beat_a->confidence >= .12f &&
                  beat_a->bpm >= 70 && beat_a->bpm <= 180 ? beat_a->bpm : 0;
   double bpm_b = beat_b && isfinite(beat_b->bpm) &&
+                 isfinite(beat_b->confidence) && beat_b->confidence >= .12f &&
                  beat_b->bpm >= 70 && beat_b->bpm <= 180 ? beat_b->bpm : 0;
   double bpm = bpm_a ? bpm_a : 125.0;
   double ratio = (bpm_a > 0 && bpm_b > 0) ? bpm_a / bpm_b : 1.0;

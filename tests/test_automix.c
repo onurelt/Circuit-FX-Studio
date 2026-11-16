@@ -74,6 +74,9 @@ int main(void) {
   BeatInfo missing = {0, 0, 0};
   assert(!automix_plan(a, b, BINS, 180, 170, &missing, &second, &smooth));
   assert(!smooth.use_beatmatch);
+  BeatInfo weak = {128, 0, .04f};
+  assert(!automix_plan(a, b, BINS, 180, 170, &weak, &second, &smooth));
+  assert(!smooth.use_beatmatch && smooth.tempo_ratio == 1);
   assert(!automix_plan(a, b, BINS, 18, 18, &first, &second, &smooth));
   check_bounds(&smooth, 18, 18);
   assert(automix_plan(a, b, BINS, 5, 180, &first, &second, &smooth) != 0);

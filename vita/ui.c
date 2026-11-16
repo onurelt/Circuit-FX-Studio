@@ -186,7 +186,23 @@ int ui_hit_test_for_tab(const View *v, int x, int y) {
   if (v && v->workflow == 1) {
     if (y >= 6 && y < 47)
       return x < 760 ? 0 : 175;
-    if (y >= 484 && y < 541) return 175;
+    if (y >= 88 && y < 352) {
+      int row = (y - 88) / 66;
+      if (row < 0 || row >= 4) return -1;
+      if (x >= 190 && x < 444) return 500 + row;
+      if (x >= 510 && x < 584) return 400 + row * 4;
+      if (x >= 590 && x < 664) return 401 + row * 4;
+      if (x >= 670 && x < 792) return 402 + row * 4;
+      if (x >= 798) return 403 + row * 4;
+      return 460 + row;
+    }
+    if (y >= 368 && y < 416) {
+      if (x < 234) return 440;
+      if (x < 354) return 441;
+      if (x < 582) return 442;
+      if (x < 780) return 443;
+      return 175;
+    }
     return -1;
   }
   if (y >= 6 && y < 47) {

@@ -3,6 +3,7 @@
 #include "beatmatch.h"
 #include "automix.h"
 #include "prepared_stems.h"
+#include "stem_mix.h"
 #include "vocal.h"
 #include <math.h>
 #include <psp2/audioout.h>
@@ -37,6 +38,8 @@ static AutoMixPlan mix_plans[AUTOMIX_VARIATION_COUNT];
 static unsigned mix_revision;
 static int mix_plans_valid;
 static char active_wave_part[512];
+static char imported_stems[STEM_COUNT][STEM_PATH_CAPACITY];
+static int stem_slider_active = -1;
 static int count, ready;
 static uint32_t previous, held;
 static int touch_x, touch_y, touch_down;
@@ -44,6 +47,7 @@ static int touches, touch_points[2][2];
 static int screen_dirty = 1;
 static uint64_t draw_total_us, draw_max_us, draw_count;
 static int progress(uint32_t done, uint32_t total);
+static int play(void);
 static void logline(const char *s);
 static int has_suffix(const char *name, const char *suffix) {
   size_t n = strlen(name), s = strlen(suffix);
@@ -258,6 +262,7 @@ static void fit_wave(void) {
   screen_dirty=1;
 }
 static void wave_gesture(int pressed) {
+  if (view.workflow == 1) { gesture_deck = -1; return; }
   if (!touches) { gesture_deck = -1; return; }
   int x = touch_points[0][0], y = touch_points[0][1];
   if (pressed && x >= 54 && x < 934 && y >= 80 && y < 309) {
@@ -1021,6 +1026,164 @@ static void browse(int deck) {
   view.browser = 0;
   screen_dirty = 1;
 }
+static const char *const stem_labels[STEM_COUNT] = {
+    "Vocals", "Drums", "Bass", "Other"};
+
+static void load_prepared_stems(int reset_controls) {
+  if (reset_controls) {
+    view.stem_mute_mask = 0;
+    view.stem_solo = -1;
+    for (int i = 0; i < STEM_COUNT; ++i)
+      view.stem_gain[i] = 1.0f;
+  }
+  int mask = prepared_stem_paths(originals[0], paths[0], imported_stems);
+  view.stem_present = mask > 0 ? (unsigned)mask : 0;
+  view.stem_mute_mask &= view.stem_present;
+  if (view.stem_solo >= 0 &&
+      !(view.stem_present & (1u << view.stem_solo)))
+    view.stem_solo = -1;
+  if (view.stem_present)
+    message("Aligned prepared stems loaded. Preview and export are ready; no AI runs on Vita.");
+  else
+    message("No aligned stems found. Put externally separated WAV sidecars beside the song.");
+}
+
+static unsigned active_stem_mask(void) {
+  if (view.stem_solo >= 0)
+    return view.stem_present & (1u << view.stem_solo);
+  return view.stem_present & ~view.stem_mute_mask;
+}
+
+static int stem_output_path(int stem, char *out, size_t capacity) {
+  static const char *const names[STEM_COUNT] = {
+      "VOCALS", "DRUMS", "BASS", "OTHER"};
+  if (stem < 0 || stem >= STEM_COUNT || !out || !capacity)
+    return -1;
+  for (int i = 1; i <= 9999; ++i) {
+    int written = snprintf(out, capacity, ROOT "/exports/%s_%04d.WAV",
+                           names[stem], i);
+    if (written < 0 || (size_t)written >= capacity)
+      return -1;
+    SceIoStat st;
+    if (sceIoGetstat(out, &st) < 0)
+      return 0;
+  }
+  return -1;
+}
+
+static int stem_mix_to(const char *output, unsigned mask) {
+  const char *inputs[STEM_COUNT];
+  for (int i = 0; i < STEM_COUNT; ++i)
+    inputs[i] = imported_stems[i];
+  view.progress = 0;
+  show();
+  int rc = stem_mix_wav(inputs, output, view.stem_gain, mask, progress);
+  view.progress = -1;
+  screen_dirty = 1;
+  return rc;
+}
+
+static void stem_preview(void) {
+  unsigned mask = active_stem_mask();
+  if (!view.songs[0] || !mask) {
+    message("Load aligned stems and unmute or solo at least one.");
+    return;
+  }
+  if (!ready) {
+    remove(PREVIEW);
+    message("Rendering the selected stems for preview. Circle cancels.");
+    if (stem_mix_to(PREVIEW, mask)) {
+      message(stem_mix_error);
+      return;
+    }
+    ready = view.ready = 1;
+  }
+  if (play())
+    message("Stem mix playback failed.");
+}
+
+static void stem_listen(int index) {
+  if (index < 0 || index >= STEM_COUNT ||
+      !(view.stem_present & (1u << index))) {
+    message("That separated stem is not available.");
+    return;
+  }
+  char status[100];
+  snprintf(status, sizeof(status), "Playing imported %s stem.", stem_labels[index]);
+  message(status);
+  if (play_file(imported_stems[index], 0))
+    message("Stem playback failed.");
+  else
+    message("Stem audition finished.");
+}
+
+static void stem_export(int index) {
+  if (index < 0 || index >= STEM_COUNT ||
+      !(view.stem_present & (1u << index))) {
+    message("That separated stem is not available.");
+    return;
+  }
+  char out[512], status[120];
+  if (stem_output_path(index, out, sizeof(out))) {
+    message("No free per-stem export name is available.");
+    return;
+  }
+  snprintf(status, sizeof(status),
+           "Exporting %s stem at its selected gain. Circle cancels.",
+           stem_labels[index]);
+  message(status);
+  if (stem_mix_to(out, 1u << index)) {
+    remove(out);
+    message(stem_mix_error);
+    return;
+  }
+  snprintf(status, sizeof(status), "Saved exports/%s", strrchr(out, '/') + 1);
+  message(status);
+}
+
+static void stem_export_mix(void) {
+  unsigned mask = active_stem_mask();
+  if (!view.songs[0] || !mask) {
+    message("Load aligned stems and unmute or solo at least one.");
+    return;
+  }
+  char out[512];
+  int found = 0;
+  for (int i = 1; i <= 9999; ++i) {
+    snprintf(out, sizeof(out), ROOT "/exports/STEMMIX%04d.WAV", i);
+    SceIoStat st;
+    if (sceIoGetstat(out, &st) < 0) { found = 1; break; }
+  }
+  if (!found) {
+    message("Stem export folder has no free mix name.");
+    return;
+  }
+  message("Exporting the full stem mix at selected gains. Circle cancels.");
+  if (stem_mix_to(out, mask)) {
+    remove(out);
+    message(stem_mix_error);
+    return;
+  }
+  char status[120];
+  snprintf(status, sizeof(status), "Saved exports/%s", strrchr(out, '/') + 1);
+  message(status);
+}
+
+static void stem_slider_drag(void) {
+  if (!touches) {
+    stem_slider_active = -1;
+    return;
+  }
+  if (view.workflow != 1 || stem_slider_active < 0 ||
+      stem_slider_active >= STEM_COUNT)
+    return;
+  float gain = (float)fmax(0, fmin(2.0, (touch_x - 190) * 2.0 / 244.0));
+  if (fabsf(view.stem_gain[stem_slider_active] - gain) > .002f) {
+    view.stem_gain[stem_slider_active] = gain;
+    invalidate();
+  }
+}
+
 static int progress(uint32_t done, uint32_t total) {
   static int last = -1;
   int pc = total ? (int)((uint64_t)done * 100 / total) : 0;
@@ -1160,6 +1323,11 @@ static int play_file(const char *path, int transform_sfx) {
         (touch_press() &&
          (view.preset_browser ||
           ui_hit_test_for_tab(&view,touch_x,touch_y)==101 ||
+          ui_hit_test_for_tab(&view,touch_x,touch_y)==441 ||
+          ui_hit_test_for_tab(&view,touch_x,touch_y)==440 ||
+          (view.workflow==1 &&
+           ui_hit_test_for_tab(&view,touch_x,touch_y)>=400 &&
+           ui_hit_test_for_tab(&view,touch_x,touch_y)<416) ||
           ui_hit_test_for_tab(&view,touch_x,touch_y)==10)))
       atomic_store(&audio_stop, 1);
     sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
@@ -1200,6 +1368,7 @@ static void build_mix_candidates(void) {
   BeatInfo grid[2] = {beats[0], beats[1]};
   for (int d = 0; d < 2; ++d) {
     grid[d].bpm = view.track_bpm[d];
+    if (view.bpm_manual[d]) grid[d].confidence = 1.0f;
     if (view.bpm_manual[d] && grid[d].bpm > 0) {
       double cue = d ? view.settings.start_b : view.settings.start_a;
       grid[d].phase_seconds = (float)fmod(cue, 60.0 / grid[d].bpm);
@@ -1274,7 +1443,7 @@ static void regenerate_mix_candidates(void) {
 }
 static void preview(void) {
   if (view.workflow == 1) {
-    message("Real neural stem separation is unavailable in this build.");
+    stem_preview();
     return;
   }
   if (!view.songs[0] || !view.songs[1]) {
@@ -1369,6 +1538,10 @@ static void preview(void) {
     message("Preview ready. Export when satisfied.");
 }
 static void export_mix(void) {
+  if (view.workflow == 1) {
+    stem_export_mix();
+    return;
+  }
   if (!ready) {
     message("Preview these settings before exporting.");
     return;
@@ -1685,7 +1858,35 @@ static void card_action(int index) {
   } else message("Vocal Reduction Lite selected. Use controls below.");
 }
 static void direct_action(int action) {
-  if (action >= 170 && action <= 172) select_mix_candidate(action - 170);
+  if (action >= 400 && action < 416) {
+    int row = (action - 400) / 4, kind = (action - 400) % 4;
+    unsigned bit = 1u << row;
+    if (kind == 0) {
+      view.stem_mute_mask ^= bit;
+      invalidate();
+      message(view.stem_mute_mask & bit ? "Stem muted in Preview Mix." :
+                                              "Stem restored in Preview Mix.");
+    } else if (kind == 1) {
+      view.stem_solo = view.stem_solo == row ? -1 : row;
+      invalidate();
+      message(view.stem_solo == row ? "Soloing this stem in Preview Mix." :
+                                      "Stem solo cleared.");
+    } else if (kind == 2) stem_listen(row);
+    else stem_export(row);
+  } else if (action >= 460 && action < 464) {
+    stem_listen(action - 460);
+  } else if (action >= 500 && action < 504) {
+    stem_slider_active = action - 500;
+    stem_slider_drag();
+  } else if (action == 440) stem_preview();
+  else if (action == 441) message("Stem playback stopped.");
+  else if (action == 442) stem_export_mix();
+  else if (action == 443) {
+    invalidate();
+    load_prepared_stems(0);
+    screen_dirty = 1;
+  }
+  else if (action >= 170 && action <= 172) select_mix_candidate(action - 170);
   else if (action == 173) next_mix_candidate();
   else if (action == 174) regenerate_mix_candidates();
   else if (action == 175) {
@@ -1779,6 +1980,8 @@ int main(void) {
   view.wave_window=45;
   view.wave_pan=-20;
   view.selected_preset=0;
+  view.stem_solo=-1;
+  for (int i=0;i<STEM_COUNT;i++) view.stem_gain[i]=1.0f;
   view.mix_variation=AUTOMIX_SMOOTH;
   view.candidates_ready=0;
   view.mix_manual_edit=0;
@@ -1801,11 +2004,9 @@ int main(void) {
       browse(0);
       if (view.songs[0]) {
         if (view.workflow==1) {
-          view.vocal_enabled=1;
-          view.vocal_target=0;
-          view.tab=1;
-          view.effect_index=5;
-          message("Real AI stems are unavailable. This screen will not fake separation.");
+          view.vocal_enabled=0;
+          view.tab=0;
+          load_prepared_stems(1);
         } else {
           browse(1);
           if (view.songs[1]) {
@@ -1829,6 +2030,7 @@ int main(void) {
       view.row = tap;
       hit |= SCE_CTRL_CROSS;
     }
+    stem_slider_drag();
     if (hit & SCE_CTRL_TRIANGLE)
       break;
     if (hit & SCE_CTRL_CIRCLE) {
@@ -1867,9 +2069,12 @@ int main(void) {
       message("Settings changed. Preview to hear the result.");
     }
     if (hit & SCE_CTRL_CROSS) {
-      if (view.row < 2)
-        browse(view.row);
-      else if (view.row >= 2 && view.row <= 4)
+      if (view.row < 2) {
+        int deck = view.row;
+        browse(deck);
+        if (view.workflow == 1 && deck == 0 && view.songs[0])
+          load_prepared_stems(1);
+      } else if (view.row >= 2 && view.row <= 4)
         edit_time(view.row);
       else if (view.row >= 5 && view.row <= 7)
         select_mix_candidate(view.row - 5);

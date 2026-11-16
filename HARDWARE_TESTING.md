@@ -1,11 +1,11 @@
 # Circuit FX Studio hardware validation
 
-## Auto Mix candidate build 3.0
+## Auto Mix and prepared-stem candidate build 3.1
 
 This checklist is for the simplified two-tool build. The previous project checklist below describes archived beta screens and does not apply to this UI.
 
 - Install the VPK at stock Vita clocks. Confirm it launches at native 960×544 and the home screen presents only VOCAL REMOVER and AUTO MIX.
-- Open VOCAL REMOVER, choose one song, and confirm the screen states that neural separation, per-stem controls and Vocal Remover export are unavailable. It must not display simulated stems or claim separation.
+- Open VOCAL REMOVER, choose one song, and verify the four stem rows. With no sidecars, the UI must say they are missing and that Vita does not run AI. Place `<track-base>.vocals.wav`, `.drums.wav`, `.bass.wav`, and `.other.wav` beside the song in `ux0:data/CircuitFX/music`. Each must be 44.1 kHz, stereo, 16-bit PCM and exactly sample-aligned. Rescan; confirm loaded rows, drag each gain slider, test Mute/Solo, Listen, per-stem Export WAV, Preview Mix, Stop, and Export Mix. Check output files and confirm originals remain untouched.
 - Open AUTO MIX and choose two legal test songs. Confirm both waveforms, BPM values, overlap region and cue positions are visible and touch responsive.
 - Generate/select SMOOTH, ENERGY and VOCAL BLEND. Without sidecars, confirm Vocal Blend reports the clean fallback. For a prepared-stem check, place `TrackA.vocals.wav` beside Track A and `TrackB.instrumental.wav` beside Track B; each must be 44.1 kHz, stereo, 16-bit PCM and exactly sample-aligned. Confirm the preview status says whether those stems were used, then compare its transition with the export. Confirm Next Variation and Regenerate update the selected candidate and cue labels.
 - Preview each candidate, stop, replay, then export it. Listen for clicks, clipping, tempo artifacts and unintended timing changes. Compare the selected preview's transition section with the exported WAV.
@@ -14,7 +14,7 @@ This checklist is for the simplified two-tool build. The previous project checkl
 
 ## Automated validation limits
 
-GitHub Actions host tests exercise the C planner, renderer and UI layout and compile/check the VPK. They are not Vita emulator tests and do not prove touchscreen behavior, audio output, stock-clock performance, suspend/resume, or hardware graphics. No physical Vita test is claimed for this build.
+GitHub Actions host tests exercise the C planner, stem sidecar validation/mixer, renderer and UI layout and compile/check the VPK. They are not Vita emulator tests and do not prove touchscreen behavior, audio output, stock-clock performance, suspend/resume, or hardware graphics. No physical Vita test is claimed for this build.
 
 ---
 # Historical hardware checklist (archived beta screens)

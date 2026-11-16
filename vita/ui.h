@@ -26,6 +26,9 @@ typedef struct {
   int editing;
   int home_screen, workflow; /* home / 0=Auto Mix / 1=Vocal Remover */
   int mix_variation, candidates_ready, mix_manual_edit;
+  unsigned stem_present, stem_mute_mask;
+  int stem_solo;
+  float stem_gain[4];
   double candidate_start_a[3], candidate_start_b[3], candidate_duration[3];
   char entry[20];
   char edit_error[90];

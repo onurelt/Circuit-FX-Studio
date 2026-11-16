@@ -12,9 +12,9 @@ typedef enum {
   AUTOMIX_VARIATION_COUNT = 3
 } AutoMixVariation;
 
-/* Waveform envelopes can guide energy selection, but they cannot identify
- * vocals, keys, drops, or true musical bars. Phrase alignment is an estimated
- * 16-beat grid based on the cached beat analysis. */
+/* Cached waveform envelopes guide dynamics and energy selection. They cannot
+ * identify vocals, keys, drops, or semantic musical sections. Phrase and
+ * downbeat estimates are confidence-gated and may fall back to a clean blend. */
 typedef struct {
   MixSettings mix;
   double tempo_ratio;      /* matched B tempo / original B tempo */
