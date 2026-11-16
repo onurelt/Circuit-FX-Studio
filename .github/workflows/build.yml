@@ -93,8 +93,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT_SHA="${GITHUB_SHA:0:8}"
+          VPK="$(find dist -type f -name 'CircuitFX-AutoMix-Foundation.vpk' -print -quit)"
+          test -n "$VPK" && test -s "$VPK"
           gh release create "automix-foundation-${SHORT_SHA}" \
-            "dist/CircuitFX-AutoMix-Foundation.vpk" \
+            "$VPK" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "Circuit FX AutoMix Foundation ${SHORT_SHA}" \
