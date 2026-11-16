@@ -32,6 +32,9 @@ static char matched_path[512], matched_overlap_path[512];
 static char vocal_cache_paths[2][512], render_paths[2][512], overlap_paths[2][512];
 static MixSettings render_settings;
 static BeatInfo beats[2];
+static AutoMixPlan mix_plans[AUTOMIX_VARIATION_COUNT];
+static unsigned mix_revision;
+static int mix_plans_valid;
 static char active_wave_part[512];
 static int count, ready;
 static uint32_t previous, held;
@@ -287,7 +290,11 @@ static void wave_gesture(int pressed) {
     double value = view.wave_origin[d]+view.wave_pan+span*(x-54)/880;
     double *cue = d ? &view.settings.start_b : &view.settings.start_a;
     value = round(fmax(0, fmin(length, value)) * 1000) / 1000;
-    if (value != *cue) { *cue = value; screen_dirty = 1; }
+    if (value != *cue) {
+      *cue = value;
+      view.mix_manual_edit = 1;
+      screen_dirty = 1;
+    }
   } else {
     if (x != gesture_x) {
       view.wave_pan -= (x-gesture_x)*span/880;
@@ -982,6 +989,9 @@ static void browse(int deck) {
                songs[view.browser_pos]);
       view.songs[deck] = selected_names[deck];
       view.lengths[deck] = (double)frames / 44100;
+      mix_plans_valid = 0;
+      view.candidates_ready = 0;
+      view.mix_manual_edit = 0;
       invalidate();
       if (deck == 0)
         view.settings.start_a =
@@ -1157,48 +1167,134 @@ static int play_file(const char *path, int transform_sfx) {
   return atomic_load(&audio_result);
 }
 static int play(void) { return play_file(PREVIEW, 0); }
+static int wait_for_waveforms(void) {
+  if (!wave_running && !wave_pending[0] && !wave_pending[1]) return 0;
+  message("Analyzing waveforms and beat grids. Circle cancels.");
+  while (wave_running || wave_pending[0] || wave_pending[1]) {
+    wave_poll();
+    if (buttons() & SCE_CTRL_CIRCLE) {
+      wave_shutdown();
+      message("Waveform analysis cancelled. Tap a candidate to retry.");
+      return -1;
+    }
+    if (screen_dirty) show();
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    sceKernelDelayThread(10000);
+  }
+  return 0;
+}
+
+static void build_mix_candidates(void) {
+  if (!view.songs[0] || !view.songs[1] ||
+      view.lengths[0] < 8 || view.lengths[1] < 8)
+    return;
+  if (mix_plans_valid) return;
+  if (wait_for_waveforms()) return;
+
+  if (view.auto_beatmatch)
+    (void)wait_for_beats();
+  BeatInfo grid[2] = {beats[0], beats[1]};
+  for (int d = 0; d < 2; ++d) {
+    grid[d].bpm = view.track_bpm[d];
+    if (view.bpm_manual[d] && grid[d].bpm > 0) {
+      double cue = d ? view.settings.start_b : view.settings.start_a;
+      grid[d].phase_seconds = (float)fmod(cue, 60.0 / grid[d].bpm);
+    }
+  }
+  uint64_t plan_started = sceKernelGetProcessTimeWide();
+  for (int i = 0; i < AUTOMIX_VARIATION_COUNT; ++i) {
+    if (automix_plan_variation(view.peaks[0], view.peaks[1], WAVE_BINS,
+                               view.lengths[0], view.lengths[1],
+                               &grid[0], &grid[1],
+                               (AutoMixVariation)i, mix_revision,
+                               &mix_plans[i])) {
+      mix_plans_valid = 0;
+      view.candidates_ready = 0;
+      return;
+    }
+    view.candidate_start_a[i] = mix_plans[i].mix.start_a;
+    view.candidate_start_b[i] = mix_plans[i].mix.start_b;
+    view.candidate_duration[i] = mix_plans[i].mix.duration;
+  }
+  mix_plans_valid = 1;
+  view.candidates_ready = 1;
+  char timing[120];
+  snprintf(timing, sizeof(timing),
+           "TIMING automix_candidates_ms=%llu revision=%u",
+           (unsigned long long)(sceKernelGetProcessTimeWide() - plan_started) /
+               1000,
+           mix_revision);
+  logline(timing);
+  screen_dirty = 1;
+}
+
+static void select_mix_candidate(int variation) {
+  if (variation < 0 || variation >= AUTOMIX_VARIATION_COUNT) return;
+  build_mix_candidates();
+  if (!mix_plans_valid) {
+    message("Load two songs longer than 8 seconds first.");
+    return;
+  }
+  AutoMixPlan *plan = &mix_plans[variation];
+  view.mix_variation = variation;
+  view.mix_manual_edit = 0;
+  view.settings.start_a = plan->mix.start_a;
+  view.settings.start_b = plan->mix.start_b;
+  view.settings.duration = plan->mix.duration;
+  view.settings.effects = plan->mix.effects;
+  view.settings.preset_id = 0;
+  view.settings.bpm = plan->mix.bpm;
+  view.settings.intensity = plan->mix.intensity;
+  view.wave_origin[0] = plan->mix.start_a;
+  view.wave_origin[1] = plan->mix.start_b;
+  invalidate();
+  if (plan->vocal_blend_fallback)
+    message("No prepared vocal stems. Vocal Blend uses a clean beatmatched fallback.");
+  else if (variation == AUTOMIX_ENERGY)
+    message("Energy candidate selected. Preview to hear the handoff.");
+  else
+    message("Smooth candidate selected. Preview to hear the handoff.");
+}
+
+static void next_mix_candidate(void) {
+  select_mix_candidate((view.mix_variation + 1) % AUTOMIX_VARIATION_COUNT);
+}
+
+static void regenerate_mix_candidates(void) {
+  mix_revision++;
+  mix_plans_valid = 0;
+  view.candidates_ready = 0;
+  build_mix_candidates();
+  if (mix_plans_valid) select_mix_candidate(view.mix_variation);
+  message("Transition candidates regenerated from cached waveform and beat analysis.");
+}
 static void preview(void) {
+  if (view.workflow == 1) {
+    message("Real neural stem separation is unavailable in this build.");
+    return;
+  }
   if (!view.songs[0] || !view.songs[1]) {
     message("Choose both songs first.");
     return;
   }
-  invalidate();
-  double ratio=1;
-  if (view.auto_beatmatch) {
-    /* Wait for peak envelopes, but never refuse to mix an unbeatmatchable
-     * pairing. The planner falls back to a safe original-tempo crossfade. */
-    (void)wait_for_beats();
-    BeatInfo grid[2]={beats[0],beats[1]};
-    for (int d=0;d<2;d++) {
-      grid[d].bpm=view.track_bpm[d];
-      if (view.bpm_manual[d] && grid[d].bpm>0)
-        grid[d].phase_seconds=(float)fmod(view.settings.start_a*(1-d)+
-                                  view.settings.start_b*d,60./grid[d].bpm);
-    }
-    AutoMixPlan plan;
-    if (automix_plan(view.peaks[0],view.peaks[1],WAVE_BINS,
-                     view.lengths[0],view.lengths[1],
-                     &grid[0],&grid[1],&plan)) {
-      message("Auto Mix requires two songs longer than 8 seconds.");
-      return;
-    }
-    ratio=plan.tempo_ratio;
-    view.settings.start_a=plan.mix.start_a;
-    view.settings.start_b=plan.mix.start_b;
-    view.settings.duration=plan.mix.duration;
-    view.settings.effects=plan.mix.effects;
-    view.settings.preset_id=0;
-    view.settings.bpm=plan.mix.bpm;
-    view.settings.intensity=plan.mix.intensity;
-    view.wave_origin[0]=plan.mix.start_a;
-    view.wave_origin[1]=plan.mix.start_b;
-    char log[180];
-    snprintf(log,sizeof(log),
-             "AUTOMIX mode=%s cueA=%.3f cueB=%.3f overlap=%.3f ratio=%.4f",
-             plan.use_beatmatch?"phrase-grid":"safe-crossfade",
-             plan.mix.start_a,plan.mix.start_b,plan.mix.duration,ratio);
-    logline(log);
+  build_mix_candidates();
+  if (!mix_plans_valid) {
+    message("Auto Mix requires two songs longer than 8 seconds.");
+    return;
   }
+  if (!view.mix_manual_edit)
+    select_mix_candidate(view.mix_variation);
+  double ratio = view.auto_beatmatch
+                     ? mix_plans[view.mix_variation].tempo_ratio : 1.0;
+  invalidate();
+  char plan_log[180];
+  snprintf(plan_log, sizeof(plan_log),
+           "AUTOMIX variation=%d beatmatch=%d cueA=%.3f cueB=%.3f "
+           "overlap=%.3f ratio=%.4f",
+           view.mix_variation, view.auto_beatmatch,
+           view.settings.start_a, view.settings.start_b,
+           view.settings.duration, ratio);
+  logline(plan_log);
   /* Keep the waveform worker off the storage bus while importing PCM. */
   wave_shutdown();
   for (int d=0; d<2; d++)
@@ -1519,6 +1615,7 @@ static void edit_time(int row) {
       }
       *value = round(number * 1000) / 1000;
       if (row==2 || row==3) view.wave_origin[row-2]=*value;
+      if (row >= 2 && row <= 4) view.mix_manual_edit=1;
       if (row == 13)
         view.settings.bpm = extra;
       else if (row == 14)
@@ -1527,6 +1624,8 @@ static void edit_time(int row) {
         int deck=row-15;
         view.track_bpm[deck]=(float)extra;
         view.bpm_manual[deck]=1;
+        mix_plans_valid=0;
+        view.candidates_ready=0;
       }
       invalidate();
       message(row >= 15 ? "Song BPM set manually. Auto uses this tempo."
@@ -1564,7 +1663,15 @@ static void card_action(int index) {
   } else message("Vocal Reduction Lite selected. Use controls below.");
 }
 static void direct_action(int action) {
-  if (action==160 || action==161) edit_time(15+action-160);
+  if (action >= 170 && action <= 172) select_mix_candidate(action - 170);
+  else if (action == 173) next_mix_candidate();
+  else if (action == 174) regenerate_mix_candidates();
+  else if (action == 175) {
+    view.home_screen = 1;
+    view.workflow = 0;
+    screen_dirty = 1;
+  }
+  else if (action==160 || action==161) edit_time(15+action-160);
   else if (action==162) {
     view.auto_beatmatch=!view.auto_beatmatch;
     invalidate();
@@ -1624,7 +1731,7 @@ int main(void) {
   remove(PREVIEW);
   FILE *log = fopen(ROOT "/session.log", "w");
   if (log) {
-    fprintf(log, "Circuit FX Vita Beta 2.2 / 02.02\n");
+    fprintf(log, "Circuit FX Vita Auto Mix 3.0 / 03.00\n");
     fclose(log);
   }
   if (vita2d_init() < 0 || ui_gpu_init() < 0) {
@@ -1649,7 +1756,10 @@ int main(void) {
   view.vocal_target=2; /* transition only */
   view.wave_window=45;
   view.wave_pan=-20;
-  view.selected_preset=65;
+  view.selected_preset=0;
+  view.mix_variation=AUTOMIX_SMOOTH;
+  view.candidates_ready=0;
+  view.mix_manual_edit=0;
   scan();
   message("Choose two songs. WAV or MP3. Triangle: exit safely.");
   while (1) {
@@ -1663,6 +1773,7 @@ int main(void) {
       screen_dirty = 1;
     if (tap==300 || tap==301) {
       view.workflow=(tap==300)?1:0;
+      if (view.workflow == 0) view.vocal_enabled = 0;
       view.home_screen=0;
       scan();
       browse(0);
@@ -1672,7 +1783,7 @@ int main(void) {
           view.vocal_target=0;
           view.tab=1;
           view.effect_index=5;
-          message("Vocal Lite selected: center-channel reduction only; no AI stems.");
+          message("Real AI stems are unavailable. This screen will not fake separation.");
         } else {
           browse(1);
           if (view.songs[1]) {
@@ -1698,6 +1809,11 @@ int main(void) {
     }
     if (hit & SCE_CTRL_TRIANGLE)
       break;
+    if (hit & SCE_CTRL_CIRCLE) {
+      view.home_screen = 1;
+      view.workflow = 0;
+      screen_dirty = 1;
+    }
     if (hit & SCE_CTRL_UP)
       view.row = (view.row + CONTROL_COUNT - 1) % CONTROL_COUNT;
     if (hit & SCE_CTRL_DOWN)
@@ -1706,14 +1822,10 @@ int main(void) {
       scan();
       message("Song list refreshed.");
     }
-    if (view.row>4 && (hit&(SCE_CTRL_LTRIGGER|SCE_CTRL_RTRIGGER))) {
-      view.tab=(view.tab+(hit&SCE_CTRL_RTRIGGER?1:2))%3;
-      screen_dirty=1;
-    }
-    if (view.tab==2 && view.row>=5 && view.row<=9 &&
-        (hit&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT))) {
-      view.preset_page=(view.preset_page+(hit&SCE_CTRL_RIGHT?1:3))%4;
-      screen_dirty=1;
+    if (view.row >= 5 && view.row <= 7 &&
+        (hit & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
+      int step = (hit & SCE_CTRL_RIGHT) ? 1 : AUTOMIX_VARIATION_COUNT - 1;
+      select_mix_candidate((view.row - 5 + step) % AUTOMIX_VARIATION_COUNT);
     }
     if (view.row >= 2 && view.row <= 4 &&
         (hit & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
@@ -1728,6 +1840,7 @@ int main(void) {
       double max = view.row == 4 ? 120 : view.lengths[view.row - 2];
       *value = fmax(view.row == 4 ? .1 : 0, fmin(max, *value));
       if (view.row<4) view.wave_origin[view.row-2]=*value;
+      view.mix_manual_edit = 1;
       invalidate();
       message("Settings changed. Preview to hear the result.");
     }
@@ -1736,15 +1849,19 @@ int main(void) {
         browse(view.row);
       else if (view.row >= 2 && view.row <= 4)
         edit_time(view.row);
-      else if (view.row >= 5 && view.row <= 9) {
-        card_action(view.row-5);
-      } else if (view.row == 10)
+      else if (view.row >= 5 && view.row <= 7)
+        select_mix_candidate(view.row - 5);
+      else if (view.row == 8)
+        direct_action(162);
+      else if (view.row == 9)
+        regenerate_mix_candidates();
+      else if (view.row == 10)
         preview();
       else if (view.row == 11)
         export_mix();
-      else if (view.row == 12)
-        browse_presets();
-      else if (view.row == 13 || view.row == 14)
+      else if (view.row == 12) {
+        if (ready && play()) message("Preview playback failed.");
+      } else if (view.row == 13 || view.row == 14)
         edit_time(view.row);
     }
     if (hit & SCE_CTRL_START) { /* Clear the trigger edge before synchronous

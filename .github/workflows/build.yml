@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita AutoMix Foundation
+name: Build Circuit FX Studio Vita Advanced Auto Mix
 on:
   push:
   workflow_dispatch:
@@ -64,12 +64,12 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel 2
-          python3 tests/check_vpk.py build/CircuitFX-AutoMix-Foundation.vpk
+          python3 tests/check_vpk.py build/CircuitFX-Advanced-AutoMix.vpk
       - uses: actions/upload-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-AutoMix-Foundation
+          name: Circuit-FX-Studio-Vita-Advanced-AutoMix
           path: |
-            build/CircuitFX-AutoMix-Foundation.vpk
+            build/CircuitFX-Advanced-AutoMix.vpk
             README.md
             HARDWARE_TESTING.md
           if-no-files-found: error
@@ -86,19 +86,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Circuit-FX-Studio-Vita-AutoMix-Foundation
+          name: Circuit-FX-Studio-Vita-Advanced-AutoMix
           path: dist
       - name: Publish verified build to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT_SHA="${GITHUB_SHA:0:8}"
-          VPK="$(find dist -type f -name 'CircuitFX-AutoMix-Foundation.vpk' -print -quit)"
+          VPK="$(find dist -type f -name 'CircuitFX-Advanced-AutoMix.vpk' -print -quit)"
           test -n "$VPK" && test -s "$VPK"
-          gh release create "automix-foundation-${SHORT_SHA}" \
+          gh release create "automix-professional-${SHORT_SHA}" \
             "$VPK" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --title "Circuit FX AutoMix Foundation ${SHORT_SHA}" \
-            --notes "Experimental automatic cue/energy/approximate phrase-grid transitions. CI-tested build, not verified on PS Vita hardware. No real AI stem separation yet." \
+            --title "Circuit FX Studio Auto Mix ${SHORT_SHA}" \
+            --notes "Three generated Auto Mix candidates with estimated beat/phrase alignment. Host tests and VitaSDK build are CI-verified; physical Vita behavior is not verified. Vocal Blend safely falls back because no prepared vocal stems are available. No AI stem separation is included." \
             --prerelease

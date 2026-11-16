@@ -177,51 +177,42 @@ double ui_timeline_span(const View *v) {
   return ui_timeline_pre(v) + v->settings.duration + 4;
 }
 int ui_hit_test_for_tab(const View *v, int x, int y) {
-  if (x<10 || x>=950 || y<0 || y>=544) return -1;
+  if (x < 10 || x >= 950 || y < 0 || y >= 544) return -1;
   if (v && v->home_screen) {
-    if (y>=138 && y<286) return 300;
-    if (y>=310 && y<458) return 301;
+    if (y >= 138 && y < 286) return 300;
+    if (y >= 310 && y < 458) return 301;
+    return -1;
+  }
+  if (v && v->workflow == 1) {
+    if (y >= 6 && y < 47)
+      return x < 760 ? 0 : 175;
+    if (y >= 484 && y < 541) return 175;
     return -1;
   }
   if (y >= 6 && y < 47) {
-    if (v->songs[0] && y>=22 && x>=364 && x<470) return 160;
-    if (v->songs[1] && y>=22 && x>=844 && x<950) return 161;
+    if (v->songs[0] && y >= 22 && x >= 364 && x < 470) return 160;
+    if (v->songs[1] && y >= 22 && x >= 844 && x < 950) return 161;
     return x < 470 ? 0 : x >= 490 ? 1 : -1;
   }
   if (y >= 318 && y < 365) {
     if (x < 112) return 10;
-    if (x < 178) return 101; /* Stop */
-    if (x < 258) return 102; /* Replay */
+    if (x < 178) return 101;
+    if (x < 258) return 102;
     if (x < 384) return 2;
     if (x < 510) return 3;
     if (x < 636) return 4;
-    if (x < 700) return 103; /* Zoom out */
-    if (x < 764) return 104; /* Zoom in */
-    if (x < 824) return 105; /* Fit */
-    return x < 950 ? 11 : -1;
+    if (x < 700) return 103;
+    if (x < 764) return 104;
+    if (x < 824) return 105;
+    return 11;
   }
-  if (y >= 371 && y < 410) return x < 322 ? 110 : x < 638 ? 111 : 112;
-  if (v->tab == 2) {
-    if (y >= 416 && y < 443 && x >= 14 && x < 942)
-      return 130 + (x - 14) / 116;
-    if (y >= 448 && y < 506 && x >= 14 && x < 946)
-      return 120 + (x - 14) / 188;
-    if (y >= 507 && y < 544)
-      return x < 68 ? 140 : x >= 884 ? 141 : x >= 722 ? 142 :
-             !v->auto_beatmatch && x >= 563 && x < 605 ? 153 :
-             !v->auto_beatmatch && x >= 665 && x < 707 ? 154 : -1;
-  } else if (v->tab == 1) {
-    if (y >= 420 && y < 490 && x >= 14 && x < 946)
-      return 120 + (x - 14) / 155;
-    if (y >= 497 && y < 541)
-      return x < 150 ? 150 : x >= 340 && x < 392 ? 151 :
-             x >= 466 && x < 518 ? 152 :
-             v->effect_index==5 && x>=550 && x<940 ? 163 :
-             v->settings.preset_id && !v->auto_beatmatch && x >= 710 && x < 762 ? 153 :
-             v->settings.preset_id && !v->auto_beatmatch && x >= 872 && x < 924 ? 154 : -1;
-  } else if (y>=507 && y<543 && x>=620 && x<940) return 162;
-  else if (y >= 420 && y < 504 && x >= 14 && x < 946)
-    return 120 + (x - 14) / 188;
+  if (y >= 373 && y < 466)
+    return x < 326 ? 170 : x < 638 ? 171 : 172;
+  if (y >= 484 && y < 541) {
+    if (x < 238) return 162;
+    if (x < 458) return 173;
+    if (x < 688) return 174;
+  }
   return -1;
 }
 int ui_key_test(int x, int y) {
@@ -280,7 +271,8 @@ static void draw_wave(const View *v, int deck, double pan, double span,
   if (v->progress >= 0) {
     dim();
     panel(192, 185, 576, 164, 1, CYAN);
-    txt(219, 204, &title, WHITE, "Processing audio", 520);
+    txt(219, 204, &title, WHITE,
+        v->status[0] ? v->status : "Processing audio", 520);
     snprintf(s, sizeof(s), "%d%%   /   Circle to cancel", v->progress);
     txt(219, 245, &body, MUTED, s, 520);
     roundbox(219, 295, 522, 8, 4, BG, BG);
@@ -322,99 +314,6 @@ static void draw_wave(const View *v, int deck, double pan, double span,
              v->browser_count);
     txt(88, 464, &small, MUTED, s, 620);
     txt(736, 464, &small, CYAN, "< PREV    NEXT >", 140);
-  }
-  if (v->preset_browser) {
-    dim();
-    panel(16, 47, 928, 455, 1, PINK);
-    txt(34, 60, &title, WHITE, "Transition effects and DJ styles", 690);
-    txt(34, 91, &small, MUTED,
-        "WAV FX are real audio. DJ tabs are genre-inspired original recipes.",
-        870);
-    int selected = v->selected_preset >= 1 && v->selected_preset <= PRESET_COUNT
-                       ? v->selected_preset
-                       : 1;
-    int bank = (selected - 1) / 16, page = ((selected - 1) % 16) / 8;
-    const char *shortbanks[] = {"GSP",   "Micky F", "Anne L",   "Erik V",
-                                "WAV 1", "WAV 2",   "DJ Paulo", "Honey Dijon"};
-    for (int i = 0; i < BANK_COUNT; i++) {
-      int tx = 34 + (i % 4) * 225, ty = 115 + (i / 4) * 29;
-      roundbox(tx, ty, 216, 26, 5,
-               i == bank ? RGB(77, 35, 102) : RGB(27, 37, 54), RGB(20, 28, 44));
-      txt(tx + 12, ty + 3, &body, i == bank ? PINK : WHITE, shortbanks[i], 190);
-    }
-    for (int i = 0; i < 8; i++) {
-      int id = bank * 16 + page * 8 + i + 1, y = 180 + i * 31;
-      if (id > PRESET_COUNT)
-        continue;
-      TransitionPreset p;
-      preset_get(id, &p);
-      roundbox(34, y, 492, 28, 5,
-               id == selected ? RGB(23, 77, 93) : RGB(25, 34, 49),
-               RGB(18, 27, 41));
-      snprintf(s, sizeof(s), "%02d   %s", id, p.name);
-      txt(47, y + 3, &body, id == selected ? CYAN : WHITE, s, 460);
-    }
-    TransitionPreset p;
-    preset_get(selected, &p);
-    panel(544, 180, 382, 250, 0, EDGE);
-    txt(559, 165, &small, PINK, preset_banks[bank], 350);
-    txt(559, 191, &title, WHITE, p.name, 350);
-    /* Wrap description into bounded lines without splitting UTF-8 (ASCII
-     * recipes). */
-    char line[46] = {0};
-    int pos = 0, y = 230;
-    const char *word = p.description;
-    while (*word) {
-      const char *end = strchr(word, ' ');
-      int n = end ? (int)(end - word) : (int)strlen(word);
-      if (pos + n + (pos ? 1 : 0) > 43) {
-        line[pos] = 0;
-        txt(559, y, &small, MUTED, line, 350);
-        y += 19;
-        pos = 0;
-      }
-      if (pos)
-        line[pos++] = ' ';
-      memcpy(line + pos, word, n);
-      pos += n;
-      word = end ? end + 1 : word + n;
-    }
-    line[pos] = 0;
-    txt(559, y, &small, MUTED, line, 350);
-    double shown_bpm=v->auto_beatmatch && v->track_bpm[0]>0 ?
-                     v->track_bpm[0] : v->settings.bpm;
-    snprintf(s, sizeof(s), "%d beats  /  %.2f sec at %.0f BPM", p.beats,
-             p.beats * 60.0 / shown_bpm, shown_bpm);
-    txt(559, 310, &body, CYAN, s, 350);
-    snprintf(s, sizeof(s), "Echo %.2f beat   Feedback %.0f%%", p.delay_beats,
-             p.feedback * 100);
-    if (p.sample_id) {
-      roundbox(555, 337, 355, 32, 5, RGB(20, 85, 101), RGB(13, 52, 65));
-      txt(567, 344, &body, CYAN,
-          v->playing ? "Stop WAV / Circle" : "[] Listen WAV (no songs needed)",
-          330);
-    } else
-      txt(559, 345, &small, MUTED, s, 350);
-    if (p.sample_id) {
-      snprintf(s, sizeof(s), "Reverse: %s  /  touch to toggle",
-               v->settings.sample_reverse ? "ON" : "OFF");
-      roundbox(555, 374, 355, 29, 5, RGB(31, 39, 58), RGB(20, 28, 44));
-      txt(567, 379, &body, v->settings.sample_reverse ? PINK : WHITE, s, 330);
-      snprintf(s, sizeof(s), "Speed  -       %.1fx       +",
-               v->settings.sample_speed);
-      roundbox(555, 406, 355, 22, 5, RGB(31, 39, 58), RGB(20, 28, 44));
-      txt(567, 407, &small, CYAN, s, 330);
-    } else {
-      txt(559, 371, &small, MUTED, "Cues stay where you set them.", 350);
-      txt(559, 392, &small, MUTED, "Duration fits the available audio.", 350);
-    }
-    roundbox(34, 446, 240, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
-    snprintf(s, sizeof(s), "Page %d / 2   < L / R >", page + 1);
-    txt(52, 455, &body, WHITE, s, 219);
-    roundbox(544, 446, 170, 39, 6, RGB(35, 46, 65), RGB(20, 29, 44));
-    txt(586, 455, &body, WHITE, "Cancel", 140);
-    roundbox(730, 446, 196, 39, 6, RGB(16, 116, 137), RGB(11, 64, 84));
-    txt(762, 455, &body, WHITE, "Apply preset", 158);
   }
   if (v->editing) {
     dim();

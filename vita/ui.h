@@ -1,5 +1,6 @@
 #ifndef UI_H
 #define UI_H
+#include "automix.h"
 #include "presets.h"
 #include "render.h"
 #include <stdint.h>
@@ -24,6 +25,8 @@ typedef struct {
   int preset_browser, selected_preset;
   int editing;
   int home_screen, workflow; /* home / 0=Auto Mix / 1=Vocal Remover */
+  int mix_variation, candidates_ready, mix_manual_edit;
+  double candidate_start_a[3], candidate_start_b[3], candidate_duration[3];
   char entry[20];
   char edit_error[90];
 } View;

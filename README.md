@@ -1,14 +1,26 @@
-# Circuit FX Studio — native PS Vita Beta 2.2
+## Current development build — Auto Mix candidate workflow
+
+This development build replaces the old Transitions / Effects / Presets tabs with a focused two-track Auto Mix screen. It offers three generated transition plans: Smooth (long crossfade), Energy (shorter energy-focused handoff), and Vocal Blend. Vocal Blend is clearly a clean-crossfade fallback because no prepared vocal stems are available. Beat and 16-beat phrase alignment are estimates derived from cached waveform envelopes, followed by the existing bass-swap DSP. The app does not perform key analysis, vocal recognition, or semantic section detection.
+
+The Auto Mix screen keeps both waveforms, cue positioning, beatmatch control, preview, replay, stop and WAV export. Selecting a candidate invalidates the previous preview; export requires rendering the selected settings first. Regenerate advances the phrase-search offset to propose another set of cues.
+
+VOCAL REMOVER remains a one-song entry point, but real neural separation is **not implemented**. This build generates no fake vocals, drums, bass, or instrument stems. The screen states that prepared-stem import is also not implemented. The older Vocal Lite filter is hidden from this simplified interface and must not be described as AI separation.
+
+Automated host tests and the VitaSDK build run in GitHub Actions. They do not replace physical PS Vita verification. AI model feasibility and known blockers are documented in [docs/AI_FEASIBILITY.md](docs/AI_FEASIBILITY.md).
+
+---
+
+# Circuit FX Studio — native PS Vita development build
 
 A standalone VitaSDK DJ transition editor for **960×544**. Replaces the PSP target. No PC, server, Adrenaline, overclock, or extra runtime plugins are needed for mixing.
 
-## Beta 2.2 — complete curve and menu drawing (02.02)
+## Historical Beta 2.2 — complete curve and menu drawing (02.02)
 
 The new Vita photo confirms Beta 2.1's solid panels, waveforms, buttons and Effects controls are visible. Its effect curves are still blank. Beta 2.2 replaces GPU line primitives with narrow, batched GPU triangles, using the same drawing path that successfully rendered the waveforms on Vita. A low-memory fallback draws small GPU rectangles. The three tabs now have simple icons inside their existing touch targets. The BPM badge says **SET BPM** if detection is unavailable; tap it to enter a manual value. Vocal Lite remains the sixth Effects card; Auto Beatmatch remains on Transitions.
 
 The native Vita2D call-path regression test checks aligned vertices, depth 0.5, nondegenerate triangles, both waveforms and every transition/effect curve. It exercises Transitions, Effects, Presets, the song and preset browsers, time editor, export confirmation and progress overlay. This still cannot prove the new triangle curves appear on real Vita hardware; install and send photos of all three tabs to finish that verification.
 
-## Beta 2.1 — Vita graphics repair and Vocal Reduction Lite (02.01)
+## Historical Beta 2.1 — Vita graphics repair and Vocal Reduction Lite (02.01)
 
 Beta 2.0 rendered text and some primitive shapes on real Vita hardware, but its custom vertex batches for panels, waveforms and effect curves appeared as scattered dots or disappeared. All custom vertices now use Vita2D's 16-byte aligned pool allocation and its sample's **0.5 depth**. If a batch cannot be allocated, its shapes fall back to Vita2D's GPU rectangles or lines. The app logs `TIMING gpu_fallbacks` at a clean exit. This is a targeted fix informed by the supplied Vita photos and the library's own sample; **a fresh on-device screenshot is still required** to confirm it on the user's Vita.
 

@@ -1,4 +1,23 @@
-# Vita Beta 1 hardware acceptance checklist
+# Circuit FX Studio hardware validation
+
+## Auto Mix candidate build 3.0
+
+This checklist is for the simplified two-tool build. The previous project checklist below describes archived beta screens and does not apply to this UI.
+
+- Install the VPK at stock Vita clocks. Confirm it launches at native 960×544 and the home screen presents only VOCAL REMOVER and AUTO MIX.
+- Open VOCAL REMOVER, choose one song, and confirm the screen states that neural separation and prepared-stem import are unavailable. It must not display simulated stems or claim separation.
+- Open AUTO MIX and choose two legal test songs. Confirm both waveforms, BPM values, overlap region and cue positions are visible and touch responsive.
+- Generate/select SMOOTH, ENERGY and VOCAL BLEND. Confirm Vocal Blend explicitly reports the clean fallback when no prepared stems are loaded. Confirm Next Variation and Regenerate update the selected candidate and cue labels.
+- Preview each candidate, stop, replay, then export it. Listen for clicks, clipping, tempo artifacts and unintended timing changes. Compare the selected preview's transition section with the exported WAV.
+- Test Auto Beatmatch on/off, manual BPM, large BPM differences, short tracks, repeated song switching, cancellation, low storage, close/relaunch, and waveform gestures at stock clocks.
+- Capture ux0:data/CircuitFX/session.log and a photo of the home screen, candidate screen, and processing/export overlays. These device-only checks have not been completed by CI.
+
+## Automated validation limits
+
+GitHub Actions host tests exercise the C planner, renderer and UI layout and compile/check the VPK. They are not Vita emulator tests and do not prove touchscreen behavior, audio output, stock-clock performance, suspend/resume, or hardware graphics. No physical Vita test is claimed for this build.
+
+---
+# Historical hardware checklist (archived beta screens)
 
 No physical Vita was available during development. Host tests exercise the same C audio renderer linked into the native VPK. Compilation and package checks do not verify hardware audio, shell behavior, suspend/resume or storage throughput.
 

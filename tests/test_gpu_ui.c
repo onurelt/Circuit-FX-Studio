@@ -69,11 +69,11 @@ void vita2d_draw_texture_tint_part(vita2d_texture *t,float x,float y,
   (void)t;(void)x;(void)y;(void)tx;(void)ty;(void)color;
   assert(w>0 && h>0);textures++;
 }
-static void frame(View *v,int curves) {
+static void frame(View *v) {
   used=0;wave_batches=curve_batches=tri_batches=rectangles=textures=0;
   ui_draw(NULL,v);
-  assert(wave_batches==2 && curve_batches==curves);
-  assert(tri_batches>=2+curves && rectangles>20 && textures>20);
+  assert(wave_batches==2 && curve_batches==0);
+  assert(tri_batches>=2 && rectangles>20 && textures>20);
   assert(ui_gpu_fallback_count()==0);
 }
 int main(void) {
@@ -89,21 +89,24 @@ int main(void) {
   v.auto_beatmatch=1;v.vocal_strength=70;v.vocal_target=2;
   for (int d=0;d<2;d++) for (int i=0;i<WAVE_BINS;i++)
     v.peaks[d][i]=15000;
-  for (int tab=0;tab<3;tab++) {
-    v.tab=tab;v.effect_index=tab==1?5:0;
-    frame(&v,tab==0?5:tab==1?6:0);
-  }
-  v.browser=1;v.entries[0]="A.wav";v.browser_count=1;frame(&v,0);
-  v.browser=0;v.preset_browser=1;v.selected_preset=65;frame(&v,0);
-  v.preset_browser=0;v.editing=1;strcpy(v.entry,"155.250");frame(&v,0);
-  v.editing=0;v.confirm=1;frame(&v,0);
-  v.confirm=0;v.progress=50;frame(&v,0);
-  v.progress=-1;v.tab=1;v.effect_index=5;
+  v.candidates_ready=1;v.mix_variation=0;
+  v.candidate_start_a[0]=150;v.candidate_start_b[0]=48;
+  v.candidate_duration[0]=15;
+  frame(&v);
+  v.mix_variation=1;frame(&v);
+  v.mix_variation=2;frame(&v);
+  v.browser=1;v.entries[0]="A.wav";v.browser_count=1;frame(&v);
+  v.browser=0;v.preset_browser=1;v.selected_preset=65;frame(&v);
+  v.preset_browser=0;v.editing=1;strcpy(v.entry,"155.250");frame(&v);
+  v.editing=0;v.confirm=1;frame(&v);
+  v.confirm=0;v.progress=50;frame(&v);
+  v.progress=-1;v.workflow=1;
   used=0;wave_batches=curve_batches=rectangles=0;
-  deny_curve_alloc=1;
   ui_draw(NULL,&v);
-  assert(wave_batches==2 && curve_batches==0 && rectangles>500);
-  assert(ui_gpu_fallback_count()==6);
+  assert(wave_batches==1 && curve_batches==0 && rectangles>20);
+  assert(ui_gpu_fallback_count()==0);
+  v.workflow=0;
   ui_gpu_fini();
-  puts("PASS: native Vita2D draw path, aligned 0.5-depth triangles, six curves, waveforms and all menus.");
+  puts("PASS: native Vita2D draw path, aligned 0.5-depth waveform triangles, "
+       "candidate cards, progress and modal screens.");
 }
