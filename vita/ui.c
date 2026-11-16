@@ -178,6 +178,11 @@ double ui_timeline_span(const View *v) {
 }
 int ui_hit_test_for_tab(const View *v, int x, int y) {
   if (x<10 || x>=950 || y<0 || y>=544) return -1;
+  if (v && v->home_screen) {
+    if (y>=138 && y<286) return 300;
+    if (y>=310 && y<458) return 301;
+    return -1;
+  }
   if (y >= 6 && y < 47) {
     if (v->songs[0] && y>=22 && x>=364 && x<470) return 160;
     if (v->songs[1] && y>=22 && x>=844 && x<950) return 161;

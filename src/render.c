@@ -200,9 +200,9 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
   }
   uint32_t tail = b.frames - cue - overlap, start = 0;
   if (preview) {
-    start = pre > RATE * 4 ? pre - RATE * 4 : 0;
-    if (tail > RATE * 4)
-      tail = RATE * 4;
+    start = pre > RATE * 10 ? pre - RATE * 10 : 0;
+    if (tail > RATE * 10)
+      tail = RATE * 10;
   }
   uint64_t frames = (uint64_t)pre - start + overlap + tail;
   if (frames * 4 + 44 > INT32_MAX) {

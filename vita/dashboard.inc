@@ -82,6 +82,18 @@ void ui_draw(uint32_t *pixels, const View *v) {
   fb=pixels;
   rect(0,0,960,544,BG);
   char s[180],a[32];
+  if (v->home_screen) {
+    roundbox(18,18,924,508,24,RGB(27,39,58),BG);
+    txt(52,48,&large,WHITE,"CIRCUIT FX STUDIO",650);
+    roundbox(52,138,856,148,20,RGB(30,76,88),RGB(22,37,54));
+    txt(78,169,&title,CYAN,"VOCAL REMOVER",600);
+    txt(78,222,&body,WHITE,"Choose one song for Vocal Lite processing",790);
+    roundbox(52,310,856,148,20,RGB(81,46,91),RGB(35,31,55));
+    txt(78,341,&title,PINK,"AUTO MIX",600);
+    txt(78,394,&body,WHITE,"Choose two songs for automatic beatmatched mixing",790);
+    txt(290,488,&body,MUTED,"Touch a mode to begin",400);
+    return;
+  }
   /* Compact file selectors: art is intentionally omitted until real album
    * artwork loading exists. The entire bar opens the existing file browser. */
   for (int d=0;d<2;d++) {
