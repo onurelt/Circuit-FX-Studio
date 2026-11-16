@@ -48,6 +48,7 @@ static int screen_dirty = 1;
 static uint64_t draw_total_us, draw_max_us, draw_count;
 static int progress(uint32_t done, uint32_t total);
 static int play(void);
+static int play_file(const char *path, int transform_sfx);
 static void logline(const char *s);
 static int has_suffix(const char *name, const char *suffix) {
   size_t n = strlen(name), s = strlen(suffix);
