@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [fp16, int8]
+        model: [int8]
+        seconds: [5, 20]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,9 +35,9 @@ jobs:
           find /tmp/spleeter-model -name '*.onnx' -type f -print
       - name: Run real AI inference on original synthetic 20-second music (host only)
         run: |
-          python experiments/two_stem_poc/run_host.py --model-root /tmp/spleeter-model --out-dir /tmp/stem-results --seconds 20
+          python experiments/two_stem_poc/run_host.py --model-root /tmp/spleeter-model --out-dir /tmp/stem-results --seconds ${{ matrix.seconds }}
       - uses: actions/upload-artifact@v4
         with:
-          name: host-two-stem-${{ matrix.model }}-metrics-NOT-VITA
+          name: host-two-stem-${{ matrix.model }}-${{ matrix.seconds }}s-metrics-NOT-VITA
           path: /tmp/stem-results/metrics.json
           if-no-files-found: error
