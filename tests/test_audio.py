@@ -47,7 +47,17 @@ with tempfile.TemporaryDirectory() as d:
  assert len(set(signatures))==5
  # Preview is exactly the corresponding excerpt of the export, including DSP state.
  full=p/'full.wav';prev=p/'preview.wav';run(a,b,full,sa=5,sb=.25,duration=.5,fx=31);run(a,b,prev,sa=5,sb=.25,duration=.5,fx=31,preview=1)
- _,f=read(full);n,v=read(prev);assert n==round(8.5*RATE);assert v==f[RATE*4:RATE*4+n*4]
+ _,f=read(full);n,v=read(prev);assert n==round(11.75*RATE);assert v==f
+ # With longer songs, Quick Preview is 10 seconds either side of the mix.
+ wav(a,30,7000);wav(b,30,-6000)
+ full2=p/'full2.wav';prev2=p/'preview2.wav'
+ run(a,b,full2,sa=20,sb=0,duration=2)
+ run(a,b,prev2,sa=20,sb=0,duration=2,preview=1)
+ _,f=read(full2);n,v=read(prev2)
+ assert n==22*RATE
+ assert v==f[10*RATE*4:(10*RATE+n)*4]
+ # Restore original short test sources for the remaining assertions.
+ wav(a,6,12000);wav(b,7,-8000)
  # Millisecond cues resolve to nearest PCM frame; overlap duration truncates to frame.
  out=p/'ms.wav';run(a,b,out,sa=.123,sb=.456,duration=.789)
  assert read(out)[0]==round(.123*RATE)+7*RATE-round(.456*RATE)
