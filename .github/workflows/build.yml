@@ -58,10 +58,16 @@ jobs:
           tar -xjf /tmp/vitasdk.tar.bz2 -C "$RUNNER_TEMP/vita"
           echo "VITASDK=$RUNNER_TEMP/vita/vitasdk" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/vita/vitasdk/bin" >> "$GITHUB_PATH"
-      - name: Install Vita2D graphics library
+      - name: Install Vita2D dependencies
         run: |
           "$VITASDK/bin/vdpm" refresh 2026.08
-          printf 'y\n' | "$VITASDK/bin/vdpm" install libvita2d
+          printf 'y\n' | "$VITASDK/bin/vdpm" install freetype libjpeg-turbo libpng zlib
+      - name: Build pinned Vita2D graphics library
+        run: |
+          git clone https://github.com/xerpi/libvita2d.git "$RUNNER_TEMP/libvita2d"
+          git -C "$RUNNER_TEMP/libvita2d" checkout a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed
+          make -C "$RUNNER_TEMP/libvita2d/libvita2d" --jobs=2
+          make -C "$RUNNER_TEMP/libvita2d/libvita2d" install
       - name: Compile installable VPK
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
