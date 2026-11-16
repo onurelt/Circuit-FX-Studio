@@ -618,6 +618,7 @@ static int decode_mp3_async(const char *input, const char *output) {
   sceKernelWaitThreadEnd(thread, NULL, NULL);
   sceKernelDeleteThread(thread);
   view.progress = -1;
+  view.home_screen = 1;
   int rc = atomic_load(&mp3_job.result);
   screen_dirty = 1;
   char timing[128];
@@ -1660,6 +1661,34 @@ int main(void) {
               ui_hit_test_for_tab(&view,touch_x,touch_y) : -1;
     if (hit || tap >= 0)
       screen_dirty = 1;
+    if (tap==300 || tap==301) {
+      view.workflow=(tap==300)?1:0;
+      view.home_screen=0;
+      scan();
+      browse(0);
+      if (view.songs[0]) {
+        if (view.workflow==1) {
+          view.vocal_enabled=1;
+          view.vocal_target=0;
+          view.tab=1;
+          view.effect_index=5;
+          message("Vocal Lite selected: center-channel reduction only; no AI stems.");
+        } else {
+          browse(1);
+          if (view.songs[1]) {
+            view.auto_beatmatch=1;
+            view.tab=0;
+            message("Auto Mix ready. Preview plans and renders the transition.");
+          } else {
+            view.home_screen=1;
+          }
+        }
+      } else {
+        view.home_screen=1;
+      }
+      tap=-1;
+      screen_dirty=1;
+    }
     if (tap>=100) {
       direct_action(tap);
       tap=-1;

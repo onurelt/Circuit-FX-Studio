@@ -23,6 +23,7 @@ typedef struct {
   double play_position, preview_length;
   int preset_browser, selected_preset;
   int editing;
+  int home_screen, workflow; /* home / 0=Auto Mix / 1=Vocal Remover */
   char entry[20];
   char edit_error[90];
 } View;
