@@ -1944,6 +1944,40 @@ static void direct_action(int action) {
   else if (action==104) zoom_wave(1/1.5);
   else if (action==105) fit_wave();
 }
+static void reset_workflow_tracks(void) {
+  wave_shutdown();
+  wave_pending[0] = wave_pending[1] = 0;
+  wave_ready[0] = wave_ready[1] = 0;
+  wave_keys[0] = wave_keys[1] = 0;
+  wave_frames[0] = wave_frames[1] = 0;
+  active_wave_part[0] = 0;
+  for (int d = 0; d < 2; ++d) {
+    view.songs[d] = NULL;
+    view.lengths[d] = 0;
+    view.track_bpm[d] = 0;
+    view.bpm_manual[d] = 0;
+    view.wave_origin[d] = 0;
+    beats[d] = (BeatInfo){0};
+    paths[d][0] = originals[d][0] = selected_names[d][0] = 0;
+    cache_paths[d][0] = vocal_cache_paths[d][0] = 0;
+    render_paths[d][0] = overlap_paths[d][0] = 0;
+    memset(view.peaks[d], 0, sizeof(view.peaks[d]));
+  }
+  view.settings.start_a = view.settings.start_b = 0;
+  view.wave_pan = -20;
+  view.wave_window = 45;
+  view.stem_present = view.stem_mute_mask = 0;
+  view.stem_solo = -1;
+  for (int i = 0; i < STEM_COUNT; ++i) {
+    view.stem_gain[i] = 1.0f;
+    imported_stems[i][0] = 0;
+  }
+  mix_plans_valid = 0;
+  view.candidates_ready = 0;
+  view.mix_manual_edit = 0;
+  invalidate();
+}
+
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir(ROOT, 0777);
@@ -1998,6 +2032,7 @@ int main(void) {
       screen_dirty = 1;
     if (tap==300 || tap==301) {
       view.workflow=(tap==300)?1:0;
+      reset_workflow_tracks();
       if (view.workflow == 0) view.vocal_enabled = 0;
       view.home_screen=0;
       scan();
