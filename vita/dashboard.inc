@@ -36,12 +36,14 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(620, 12, &small, MUTED, v->songs[0] ? a : "OPEN", 100);
     flat_button(760, 5, 190, 39, "HOME", PINK, 0);
 
-    txt(22, 55, &small, MUTED,
-        "Import separated 44.1 kHz stereo WAV sidecars. Vita does not run AI separation.", 900);
+    txt(22, 54, &small, MUTED,
+        "Cached source waveform · import separated WAV sidecars · no AI runs on Vita", 900);
+    if (v->lengths[0] > 0)
+      draw_wave(v, 0, -v->wave_origin[0], fmax(5, v->lengths[0]), 110, CYAN);
     const char *names[4] = {"VOCALS", "DRUMS", "BASS", "OTHER"};
     const uint32_t colors[4] = {PINK, RGB(255,177,72), CYAN, RGB(164,139,255)};
     for (int i = 0; i < 4; ++i) {
-      int y = 88 + i * 66;
+      int y = 160 + i * 66;
       unsigned bit = 1u << i;
       int loaded = (v->stem_present & bit) != 0;
       int muted = (v->stem_mute_mask & bit) != 0;
@@ -70,20 +72,20 @@ void ui_draw(uint32_t *pixels, const View *v) {
       flat_button(798, y + 8, 138, 42, "EXPORT WAV", colors[i], 0);
     }
 
-    flat_button(14, 368, 220, 48, "PREVIEW MIX", CYAN, 0);
-    flat_button(242, 368, 112, 48, "STOP", WHITE, 0);
-    flat_button(362, 368, 220, 48, "EXPORT MIX", PINK, 0);
-    flat_button(590, 368, 190, 48, "RESCAN STEMS", WHITE, 0);
-    flat_button(788, 368, 158, 48, "HOME", PINK, 0);
-    txt(22, 430, &small, MUTED,
+    flat_button(14, 420, 220, 48, "PREVIEW MIX", CYAN, 0);
+    flat_button(242, 420, 112, 48, "STOP", WHITE, 0);
+    flat_button(362, 420, 220, 48, "EXPORT MIX", PINK, 0);
+    flat_button(590, 420, 190, 48, "RESCAN STEMS", WHITE, 0);
+    flat_button(788, 420, 158, 48, "HOME", PINK, 0);
+    txt(22, 474, &small, MUTED,
         "Place Track.vocals.wav, Track.drums.wav, Track.bass.wav and Track.other.wav beside the song in music/.", 920);
-    txt(22, 454, &small, MUTED,
+    txt(22, 494, &small, MUTED,
         "Mute/Solo affect Preview Mix. Listen and Export WAV operate on that stem only.", 920);
     if (!v->stem_present)
-      txt(22, 478, &small, RGB(255,177,72),
+      txt(22, 514, &small, RGB(255,177,72),
           "No aligned separated stems found. This screen does not create or fake stems.", 920);
     else if (v->status[0] && v->progress < 0)
-      txt(22, 478, &small, CYAN, v->status, 920);
+      txt(22, 514, &small, CYAN, v->status, 920);
     return;
   }
 
