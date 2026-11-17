@@ -1423,7 +1423,7 @@ static void select_mix_candidate(int variation) {
   view.wave_origin[1] = plan->mix.start_b;
   invalidate();
   if (plan->vocal_blend_fallback)
-    message("Vocal Blend uses aligned sidecar stems when present; otherwise it falls back cleanly.");
+    message("Vocal Blend requires sidecar stems; without them, uses Echo Handoff.");
   else if (variation == AUTOMIX_ENERGY)
     message("Energy candidate selected. Preview to hear the handoff.");
   else
@@ -1502,6 +1502,7 @@ static void preview(void) {
     logline(prepared_vocal_blend ? "AUTOMIX prepared_stems=1" :
                                       "AUTOMIX prepared_stems=0 fallback=1");
   }
+  render_settings.prepared_stems_active = prepared_vocal_blend;
   if (prepare_match(render_paths[1],ratio,matched_path)) return;
   snprintf(render_paths[1],sizeof(render_paths[1]),"%s",matched_path);
   if (overlap_paths[1][0]) {
@@ -1534,7 +1535,7 @@ static void preview(void) {
   else if (view.mix_variation==AUTOMIX_VOCAL_BLEND)
     message(prepared_vocal_blend ?
       "Preview ready. Aligned supplied vocal and instrumental stems were used." :
-      "Preview ready. No aligned stems; clean Vocal Blend fallback used.");
+      "Preview ready. No stems; Echo Handoff was used (not vocal isolation).");
   else
     message("Preview ready. Export when satisfied.");
 }

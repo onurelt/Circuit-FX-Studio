@@ -1,12 +1,36 @@
+## Current experimental version 03.11 — audibly distinct Auto Mix
+
+This version responds to user feedback that Smooth, Energy and Vocal Blend
+sounded identical because all three had used the same crossfade + bass-swap
+DSP. They now have distinct **audio processing**, not just different cues:
+
+- **Smooth:** eased equal-power transition and gradual bass handoff.
+- **Energy:** rising high-pass sweep, echo, incoming low-end hold and
+  fuller drop entrance.
+- **Vocal Blend:** hold an independently prepared A vocal stem over
+  B's instrumental (when supplied). Without stems, a differently processed
+  **Echo Handoff** is used; it does not perform vocal extraction.
+
+The single fixed-block renderer preserves identical audio for preview
+and export; the new same-cue tests quantify audible-structure differences.
+See [DSP profiles and real-device testing](docs/AUTOMIX_DSP_PROFILES.md).
+
+**Not yet verified by listening on a physical Vita.** No real AI source
+separation is provided, and waveform differences are not subjective music
+quality scores. This is a testable improvement, not a claim of perfect
+professional mixing.
+
+---
+
 ## Current development build — Auto Mix candidate workflow
 
-This development build replaces the old Transitions / Effects / Presets tabs with a focused two-track Auto Mix screen. It offers three generated transition plans: Smooth (long crossfade), Energy (shorter energy-focused handoff), and Vocal Blend. Vocal Blend uses aligned externally prepared sidecar stems when available and otherwise falls back to a clean crossfade. Beat and 16-beat phrase alignment are estimates derived from cached waveform envelopes. Beat matching now rejects low-confidence detections and falls back to original tempo; candidate scoring compares outgoing stability, incoming rise, and energy density before the existing bass-swap DSP. The app does not perform key analysis, voice recognition, or semantic section detection.
+This development build replaces the old Transitions / Effects / Presets tabs with a focused two-track Auto Mix screen. It offers three generated transition plans: Smooth (long crossfade), Energy (shorter energy-focused handoff), and Vocal Blend. Vocal Blend uses aligned externally prepared sidecar stems when available and otherwise uses the filtered Echo Handoff fallback. Beat and 16-beat phrase alignment are estimates derived from cached waveform envelopes. Beat matching now rejects low-confidence detections and falls back to original tempo; candidate scoring compares outgoing stability, incoming rise, and energy density before the existing bass-swap DSP. The app does not perform key analysis, voice recognition, or semantic section detection.
 
-For a prepared Vocal Blend, place `<Track A basename>.vocals.wav` beside the selected Track A file and `<Track B basename>.instrumental.wav` beside Track B in `ux0:data/CircuitFX/music`. Both sidecars must be 44.1 kHz, stereo, 16-bit PCM WAVs with exactly the same decoded frame count as their song. Misaligned, missing or invalid sidecars trigger the clean-crossfade fallback.
+For a prepared Vocal Blend, place `<Track A basename>.vocals.wav` beside the selected Track A file and `<Track B basename>.instrumental.wav` beside Track B in `ux0:data/CircuitFX/music`. Both sidecars must be 44.1 kHz, stereo, 16-bit PCM WAVs with exactly the same decoded frame count as their song. Misaligned, missing or invalid sidecars trigger the echo-handoff fallback.
 
 The Auto Mix screen keeps both waveforms, cue positioning, beatmatch control, preview, replay, stop and WAV export. Selecting a candidate invalidates the previous preview; export requires rendering the selected settings first. Regenerate advances the phrase-search offset to propose another set of cues.
 
-VOCAL REMOVER is an honest one-song mixer for stems separated elsewhere. Put `<track basename>.vocals.wav`, `<track basename>.drums.wav`, `<track basename>.bass.wav`, and `<track basename>.other.wav` next to the source song in `ux0:data/CircuitFX/music`. Available stems must be 44.1 kHz stereo 16-bit PCM WAVs with exactly the decoded source frame count. The screen supports independent 0–200% gain, Mute, Solo, full-stem audition, selected-stem WAV export and full mix preview/export. The mixer uses fixed-size buffers, scans peak level before writing, and attenuates only when needed to prevent clipping. It does **not** perform neural separation or generate stems. Auto Mix Vocal Blend still accepts aligned external vocal/instrumental sidecars and falls back cleanly without them.
+VOCAL REMOVER is an honest one-song mixer for stems separated elsewhere. Put `<track basename>.vocals.wav`, `<track basename>.drums.wav`, `<track basename>.bass.wav`, and `<track basename>.other.wav` next to the source song in `ux0:data/CircuitFX/music`. Available stems must be 44.1 kHz stereo 16-bit PCM WAVs with exactly the decoded source frame count. The screen supports independent 0–200% gain, Mute, Solo, full-stem audition, selected-stem WAV export and full mix preview/export. The mixer uses fixed-size buffers, scans peak level before writing, and attenuates only when needed to prevent clipping. It does **not** perform neural separation or generate stems. Auto Mix Vocal Blend still accepts aligned external vocal/instrumental sidecars and switches to echo handoff without them.
 
 Automated host tests and the VitaSDK build run in GitHub Actions. They do not replace physical PS Vita verification. AI model feasibility and known blockers are documented in [docs/AI_FEASIBILITY.md](docs/AI_FEASIBILITY.md).
 

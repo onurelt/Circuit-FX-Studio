@@ -8,6 +8,12 @@ enum {
   FX_BASS_SWAP = 8,
   FX_QUICK_CUT = 16
 };
+enum {
+  MIX_STYLE_LEGACY = 0,
+  MIX_STYLE_SMOOTH = 1,
+  MIX_STYLE_ENERGY = 2,
+  MIX_STYLE_VOCAL_HANDOFF = 3
+};
 typedef struct {
   double start_a, start_b, duration;
   unsigned effects;
@@ -15,6 +21,8 @@ typedef struct {
   float bpm, intensity; /* BPM and effects only; intensity 0..1 */
   float sample_speed;   /* 0.5..2.0; pitch follows speed */
   int sample_reverse;   /* reverse bundled WAV transition sound */
+  int transition_style; /* optional Auto Mix DSP profile; 0 retains legacy */
+  int prepared_stems_active; /* true only when validated vocals/instrumental WAVs used */
 } MixSettings;
 typedef int (*Progress)(uint32_t done, uint32_t total);
 extern char render_error[160];

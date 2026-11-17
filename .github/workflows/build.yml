@@ -1,4 +1,4 @@
-name: Build Circuit FX Studio Vita Advanced Auto Mix
+name: Build Circuit FX Studio Vita Distinct Auto Mix Profiles
 on:
   push:
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/prepared_stems.c src/render.c src/wav.c src/presets.c tests/stem_list_tool.c -lm -o tests/stem_list_tool
           STEM_MIX_TOOL=tests/stem_mix_tool STEM_LIST_TOOL=tests/stem_list_tool python3 tests/test_stem_mix.py
           python3 tests/test_audio.py
+          python3 tests/test_transition_profiles.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
           python3 tests/test_mp3.py
@@ -112,6 +113,6 @@ jobs:
             "$VPK" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --title "Circuit FX Studio Auto Mix + Prepared Stem Mixer ${SHORT_SHA}" \
-            --notes "Three offline Auto Mix candidates with confidence-gated beat matching and cached-envelope transition scoring. Includes import, gain, mute, solo, preview and export for aligned externally separated four-stem WAV files. No neural separation runs on Vita. Host tests and VitaSDK build are CI-verified; physical Vita behavior is not verified." \
+            --title "Circuit FX Studio Distinct Auto Mix DSP ${SHORT_SHA}" \
+            --notes "Experimental version 03.11 with audibly distinct Smooth (equal-power), Energy (spectral sweep/echo/drop), and Vocal Blend (actual prepared stems; echo-only fallback). Same-cue waveform-difference tests and preview/export identity passed in CI. Still no neural separation on Vita and no physical Vita listening test." \
             --prerelease

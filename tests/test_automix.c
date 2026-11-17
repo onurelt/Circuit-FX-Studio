@@ -46,6 +46,11 @@ int main(void) {
   check_bounds(&vocal, 180, 170);
   assert(smooth.mix.duration > energy.mix.duration);
   assert(energy.mix.duration != vocal.mix.duration);
+  assert(smooth.mix.transition_style == MIX_STYLE_SMOOTH);
+  assert(energy.mix.transition_style == MIX_STYLE_ENERGY);
+  assert(vocal.mix.transition_style == MIX_STYLE_VOCAL_HANDOFF);
+  assert(smooth.mix.effects != energy.mix.effects &&
+         energy.mix.effects != vocal.mix.effects);
   assert(smooth.variation == AUTOMIX_SMOOTH);
   assert(energy.variation == AUTOMIX_ENERGY);
   assert(vocal.variation == AUTOMIX_VOCAL_BLEND &&
