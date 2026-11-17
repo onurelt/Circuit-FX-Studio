@@ -239,8 +239,19 @@ int automix_plan_variation(const uint16_t *a, const uint16_t *b,
   out->mix.start_b = floor(start_b * 1000.0 + .5) / 1000.0;
   out->mix.duration = overlap;
   out->mix.bpm = (float)bpm;
-  out->mix.effects = FX_CROSSFADE | FX_BASS_SWAP;
-  out->mix.intensity = variation == AUTOMIX_ENERGY ? .90f : .75f;
+  /* Each candidate must render with its own audible DSP signature.
+   * Vocal Blend uses real aligned sidecars only when present; otherwise
+   * MIX_STYLE_VOCAL_HANDOFF produces an honest echo-only fallback. */
+  out->mix.transition_style =
+      variation == AUTOMIX_ENERGY ? MIX_STYLE_ENERGY :
+      variation == AUTOMIX_VOCAL_BLEND ? MIX_STYLE_VOCAL_HANDOFF :
+      MIX_STYLE_SMOOTH;
+  out->mix.effects = variation == AUTOMIX_SMOOTH ?
+                     (FX_CROSSFADE | FX_BASS_SWAP) :
+                     variation == AUTOMIX_ENERGY ?
+                     (FX_CROSSFADE | FX_BASS_SWAP | FX_ECHO) :
+                     (FX_CROSSFADE | FX_ECHO);
+  out->mix.intensity = variation == AUTOMIX_ENERGY ? .9f : .75f;
   out->mix.sample_speed = 1.0f;
   out->tempo_ratio = ratio;
   out->use_beatmatch = sync;
