@@ -135,6 +135,8 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(xx + 2, 56, &small, MUTED, a, 54);
   }
   rect(54, 193, 880, 1, EDGE);
+  txt(64, 82, &small, MUTED, "DRAG TRACK A LEFT / RIGHT TO SET START", 435);
+  txt(64, 199, &small, MUTED, "DRAG TRACK B LEFT / RIGHT TO SET START", 435);
   for (int d = 0; d < 2; ++d) {
     int y = d ? 253 : 135;
     uint32_t c = d ? PINK : CYAN;
