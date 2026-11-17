@@ -2,6 +2,7 @@
 #include "mp3_import.h"
 #include "beatmatch.h"
 #include "automix.h"
+#include "timeline_drag.h"
 #include "prepared_stems.h"
 #include "stem_mix.h"
 #include "vocal.h"
@@ -232,7 +233,7 @@ static void invalidate(void) {
   remove(PREVIEW);
   screen_dirty = 1;
 }
-static int gesture_deck = -1, gesture_cue, gesture_x, gesture_distance;
+static int gesture_deck = -1, gesture_x, gesture_distance, gesture_modified;
 static void wave_bounds(double *left,double *right) {
   *left=0; *right=0;
   for (int d=0;d<2;d++) if (view.songs[d]) {
@@ -263,53 +264,74 @@ static void fit_wave(void) {
   screen_dirty=1;
 }
 static void wave_gesture(int pressed) {
-  if (view.workflow == 1) { gesture_deck = -1; return; }
-  if (!touches) { gesture_deck = -1; return; }
-  int x = touch_points[0][0], y = touch_points[0][1];
-  if (pressed && x >= 54 && x < 934 && y >= 80 && y < 309) {
-    gesture_deck = y < 194 ? 0 : 1;
-    double length = view.lengths[gesture_deck];
-    if (length <= 0) { gesture_deck = -1; return; }
-    double span = view.wave_window;
-    double cue = gesture_deck ? view.settings.start_b : view.settings.start_a;
-    double cue_x = 54 + 880 * (cue-view.wave_origin[gesture_deck]-view.wave_pan) / span;
-    gesture_cue = fabs(x - cue_x) < 24;
-    gesture_x = x;
-    gesture_distance = 0;
-    if (gesture_cue) invalidate();
+  if (view.workflow == 1 || view.home_screen) {
+    gesture_deck=-1;
+    gesture_modified=0;
     return;
   }
-  if (gesture_deck < 0) return;
-  int d = gesture_deck;
-  double length = view.lengths[d], span = view.wave_window;
-  if (touches > 1 && !gesture_cue) {
-    int distance = abs(touch_points[1][0] - x);
-    if (gesture_distance > 12 && distance > 12) {
-      double new_span = span * gesture_distance / distance;
-      double middle = (x + touch_points[1][0]) / 2.0;
-      double anchor = view.wave_pan + span * (middle - 54) / 880;
-      view.wave_pan = anchor - new_span * (middle-54) / 880;
-      view.wave_window = new_span;
-      clamp_wave();
+  if (!touches) {
+    if (gesture_deck>=0 && gesture_modified) {
+      char status[130];
+      double cue=gesture_deck?view.settings.start_b:view.settings.start_a;
+      snprintf(status,sizeof(status),
+               "Track %c starts transition at %.3f s. Preview the new mix.",
+               gesture_deck?'B':'A',cue);
+      message(status);
     }
-    gesture_distance = distance;
-  } else if (gesture_cue) {
-    double value = view.wave_origin[d]+view.wave_pan+span*(x-54)/880;
-    double *cue = d ? &view.settings.start_b : &view.settings.start_a;
-    value = round(fmax(0, fmin(length, value)) * 1000) / 1000;
-    if (value != *cue) {
-      *cue = value;
-      view.mix_manual_edit = 1;
-      screen_dirty = 1;
-    }
-  } else {
-    if (x != gesture_x) {
-      view.wave_pan -= (x-gesture_x)*span/880;
-      clamp_wave();
-    }
-    gesture_distance = 0;
+    gesture_deck=-1;
+    gesture_distance=0;
+    gesture_modified=0;
+    return;
   }
-  gesture_x = x;
+  int x=touch_points[0][0],y=touch_points[0][1];
+  if (pressed) {
+    gesture_deck=-1;
+    gesture_modified=0;
+    gesture_distance=0;
+    if (x<54 || x>=934 || y<80 || y>=309) return;
+    int d=y<194?0:1;
+    if (!view.songs[d] || view.lengths[d]<=0) return;
+    gesture_deck=d;
+    gesture_x=x;
+    return;
+  }
+  if (gesture_deck<0) return;
+  int d=gesture_deck;
+  double span=view.wave_window;
+  if (touches>1) {
+    int distance=abs(touch_points[1][0]-x);
+    if (gesture_distance>12 && distance>12) {
+      double new_span=span*gesture_distance/distance;
+      double middle=(x+touch_points[1][0])/2.0;
+      double anchor=view.wave_pan+span*(middle-54)/880;
+      view.wave_pan=anchor-new_span*(middle-54)/880;
+      view.wave_window=new_span;
+      clamp_wave();
+    }
+    gesture_distance=distance;
+  } else {
+    int dx=x-gesture_x;
+    if (dx) {
+      double ratio=1.0;
+      if (d==1 && view.auto_beatmatch && mix_plans_valid)
+        ratio=mix_plans[view.mix_variation].tempo_ratio;
+      double *cue=d?&view.settings.start_b:&view.settings.start_a;
+      double next=timeline_slide_cue(*cue,dx,span,view.lengths[d],
+                                     view.settings.duration,ratio);
+      if (next!=*cue) {
+        if (!gesture_modified) invalidate();
+        *cue=next;
+        /* Move this song beneath the stationary white start marker.
+         * The other track and the shared timeline viewport stay put. */
+        view.wave_origin[d]=next;
+        view.mix_manual_edit=1;
+        gesture_modified=1;
+        screen_dirty=1;
+      }
+    }
+    gesture_distance=0;
+  }
+  gesture_x=x;
 }
 static int compare(const void *a, const void *b) { return strcasecmp(a, b); }
 static void scan(void) {
