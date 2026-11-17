@@ -532,6 +532,11 @@ int main(int argc, char **argv) {
                    .start_b = atof(argv[5]),
                    .duration = atof(argv[6]),
                    .effects = (unsigned)atoi(argv[7])};
+  if (getenv("MIX_STYLE_TEST")) {
+    c.transition_style = atoi(getenv("MIX_STYLE_TEST"));
+    c.bpm = 128.f;
+    c.intensity = 1.f;
+  }
   if (getenv("PRESET_TEST")) {
     c.preset_id = atoi(getenv("PRESET_TEST"));
     c.bpm = getenv("BPM_TEST") ? atof(getenv("BPM_TEST")) : 128;
