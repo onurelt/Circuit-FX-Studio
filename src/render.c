@@ -553,7 +553,10 @@ int main(int argc, char **argv) {
       }
     }
   }
-  int r = render_mix(argv[1], argv[2], argv[3], &c, atoi(argv[8]),
+  const char *stem_a=getenv("A_STEM_TEST"),*stem_b=getenv("B_STEM_TEST");
+  if (stem_a && stem_b) c.prepared_stems_active=1;
+  int r = render_mix_layers(argv[1], argv[2],stem_a,stem_b,
+                     argv[3],&c,atoi(argv[8]),
                      getenv("CANCEL_TEST") ? cancel_cb : 0);
   if (r)
     fprintf(stderr, "%s\n", render_error);
