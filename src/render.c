@@ -30,6 +30,13 @@ static int fail(const char *s) {
   snprintf(render_error, sizeof(render_error), "%s", s);
   return -1;
 }
+/* Small, bounded volume and spectral-control envelopes. These are true DSP
+ * profiles; the Auto Mix options must not only differ in their cue position. */
+static float smoothstep01(float x) {
+  if (x<=0.f) return 0.f;
+  if (x>=1.f) return 1.f;
+  return x*x*(3.f-2.f*x);
+}
 static unsigned u16(const unsigned char *p) {
   return p[0] | ((unsigned)p[1] << 8);
 }
@@ -110,6 +117,10 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
                       const MixSettings *cfg,int preview,Progress cb) {
   if (!cfg)
     return fail("Missing transition settings.");
+  if (cfg->transition_style < MIX_STYLE_LEGACY ||
+      cfg->transition_style > MIX_STYLE_VOCAL_HANDOFF ||
+      cfg->prepared_stems_active < 0 || cfg->prepared_stems_active > 1)
+    return fail("Invalid Auto Mix profile.");
   TransitionPreset preset;
   int advanced = cfg->preset_id != 0;
   if (advanced &&
@@ -241,6 +252,10 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
     goto finish;
   memset(echo, 0, sizeof(echo));
   float low_a[2] = {0}, low_b[2] = {0}, filter[2] = {0};
+  float energy_sweep_low[2] = {0}, energy_incoming_low[2] = {0};
+  float energy_alpha = .02f;
+  const int style = cfg->transition_style;
+  const int real_stems = cfg->prepared_stems_active && avp && bvp;
   unsigned echo_at = 0;
   float strength = (cfg->bpm >= 60 && cfg->bpm <= 200) ? cfg->intensity : 1;
   unsigned delay_frames =
@@ -258,12 +273,16 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
   unsigned mods = advanced ? preset.mods : 0;
   float noise_low = 0, noise_high = 0, phase = 0;
   uint32_t rng = 0x73519u;
-  float feedback = advanced ? preset.feedback : .35f;
+  float feedback = advanced ? preset.feedback :
+                   style==MIX_STYLE_VOCAL_HANDOFF && !real_stems ? .63f :
+                   style==MIX_STYLE_ENERGY ? .48f : .35f;
   float filter_end = advanced ? preset.filter_end : 220.f;
   float curve = advanced ? preset.curve : 1.f;
   float bass_pivot = advanced ? preset.bass_pivot : .5f;
   float cut_at = advanced ? preset.cut_at : .5f;
-  float wet_max = advanced ? preset.wet : .3f;
+  float wet_max = advanced ? preset.wet :
+                  style==MIX_STYLE_VOCAL_HANDOFF && !real_stems ? .62f :
+                  style==MIX_STYLE_ENERGY ? .43f : .3f;
   float alpha = 1;
 
   for (uint32_t at = 0; at < overlap;) {
@@ -279,6 +298,39 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
       float t = (float)(at + i) / (overlap - 1);
       float shaped = advanced ? powf(t, curve) : t, ga = 1 - shaped,
             gb = shaped;
+      if (style == MIX_STYLE_SMOOTH) {
+        /* Equal-power feel, with correlated-song headroom in the center. */
+        float u = smoothstep01(t), theta = 1.570796327f * u;
+        float headroom = 1.f - .29f * 4.f * u * (1.f-u);
+        ga = cosf(theta) * headroom;
+        gb = sinf(theta) * headroom;
+      } else if (style == MIX_STYLE_ENERGY) {
+        /* B's high frequencies tease early. Its full bass/drums enter
+         * decisively on the later beat; A sweeps away with echoes. */
+        float intro = .32f * smoothstep01(t/.22f);
+        gb = intro + (1.f-intro)*smoothstep01((t-.62f)/.13f);
+        ga = 1.f - smoothstep01((t-.46f)/.37f);
+        if (ga+gb>1.f) {
+          float norm=1.f/(ga+gb);
+          ga*=norm;gb*=norm;
+        }
+      } else if (style == MIX_STYLE_VOCAL_HANDOFF) {
+        if (real_stems) {
+          /* Only supplied aligned vocals/instrumental permit a vocal
+           * overlay. B establishes the beat as A's vocal phrase ends. */
+          ga = 1.f - smoothstep01((t-.66f)/.22f);
+          gb = smoothstep01(t/.22f) * (.72f+
+                       .28f*smoothstep01((t-.62f)/.25f));
+          if (ga+gb>1.1f) {
+            float norm=1.1f/(ga+gb);
+            ga*=norm;gb*=norm;
+          }
+        } else {
+          /* No artificial vocal extraction: distinctive echo handoff. */
+          ga = 1.f-smoothstep01((t-.26f)/.62f);
+          gb = smoothstep01((t-.16f)/.62f);
+        }
+      }
       if (!(effects & FX_CROSSFADE)) {
         float width = fminf(.02f, seconds * .2f) / seconds;
         gb = fmaxf(0, fminf(1, (t - cut_at) / width + .5f));
@@ -296,6 +348,10 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
         float hz = (mods & MOD_HIGH_PASS) ? 30 * powf(filter_end / 30, t)
                                           : 18000 * powf(filter_end / 18000, t);
         alpha = 1 - expf(-6.2831853f * hz / RATE);
+        if (style==MIX_STYLE_ENERGY) {
+          float cutoff=110.f*powf(35.f,smoothstep01((t-.05f)/.83f));
+          energy_alpha=1.f-expf(-6.2831853f*cutoff/RATE);
+        }
       }
       float envelope = 4 * t * (1 - t), pulse = 1, noise = 0;
       if (mods & MOD_DIP) {
@@ -362,6 +418,19 @@ int render_mix_layers(const char *ap,const char *bp,const char *avp,
           float swap = z * z * (3 - 2 * z);
           x -= low_a[c] * swap * strength;
           y -= low_b[c] * (1 - swap) * strength;
+        }
+        if (style==MIX_STYLE_ENERGY) {
+          /* Genuinely different spectral treatment, not just gain curves.
+           * 2 state variables/channel; no FFTs or per-block allocations. */
+          energy_sweep_low[c] += energy_alpha*(x-energy_sweep_low[c]);
+          float highpass_amount=.92f*smoothstep01((t-.06f)/.79f);
+          x-=energy_sweep_low[c]*highpass_amount;
+          energy_incoming_low[c] += .035f*(y-energy_incoming_low[c]);
+          float bass_hold=1.f-smoothstep01((t-.54f)/.22f);
+          y-=energy_incoming_low[c]*bass_hold*.82f;
+        } else if (style==MIX_STYLE_VOCAL_HANDOFF && !real_stems) {
+          energy_sweep_low[c] += .02f*(x-energy_sweep_low[c]);
+          x-=energy_sweep_low[c]*.55f*smoothstep01((t-.32f)/.52f);
         }
         filter[c] += alpha * (x - filter[c]);
         if (effects & FX_FILTER)
