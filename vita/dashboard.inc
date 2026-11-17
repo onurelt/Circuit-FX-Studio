@@ -196,9 +196,9 @@ void ui_draw(uint32_t *pixels, const View *v) {
       snprintf(s, sizeof(s), "A %s   B %s   %s", ca, cb, cd);
       txt(x + 14, 415, &small, WHITE, s, 270);
       txt(x + 14, 438, &small, MUTED,
-          i == 0 ? "Seamless, natural blend" :
-          i == 1 ? "Shorter handoff, energy focused" :
-                   "A vocals + B instrumental sidecars", 270);
+          i == 0 ? "Long equal-power, gentle bass blend" :
+          i == 1 ? "Rising filter, echo, bass drop" :
+                   "Vocal stems or echo-only fallback", 270);
     } else {
       txt(x + 14, 418, &small, MUTED, "Tap to generate for both songs", 270);
       txt(x + 14, 440, &small, MUTED,
@@ -213,7 +213,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   flat_button(466, 486, 222, 44, "REGENERATE", PINK, 0);
   txt(704, 491, &small, MUTED,
       v->mix_variation == AUTOMIX_VOCAL_BLEND
-          ? "Aligned sidecars or clean fallback" : "Select a mix card to compare",
+          ? "Aligned stems or echo (no vocals)" : "Select a mix card to compare",
       238);
 
   if (v->status[0] && v->progress < 0 && !v->confirm && !v->browser &&
