@@ -27,6 +27,7 @@ jobs:
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/prepared_stems.c src/render.c src/wav.c src/presets.c tests/stem_list_tool.c -lm -o tests/stem_list_tool
           STEM_MIX_TOOL=tests/stem_mix_tool STEM_LIST_TOOL=tests/stem_list_tool python3 tests/test_stem_mix.py
           python3 tests/test_audio.py
+          python3 tests/test_transition_profiles.py
           python3 tests/test_presets.py
           python3 tests/test_samples.py
           python3 tests/test_mp3.py
