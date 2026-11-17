@@ -19,6 +19,8 @@ jobs:
           python3 tests/test_beatmatch.py
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/automix.c tests/test_automix.c -lm -o /tmp/test-automix
           /tmp/test-automix
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/timeline_drag.c tests/test_timeline_drag.c -lm -o /tmp/test-timeline-drag
+          /tmp/test-timeline-drag
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/vocal.c src/render.c src/wav.c src/presets.c tests/vocal_tool.c -lm -o tests/vocal_tool
           python3 tests/test_vocal.py
           gcc -std=c99 -O2 -Wall -Wextra -Werror -Isrc src/prepared_stems.c src/render.c src/wav.c src/presets.c tests/prepared_stems_tool.c -lm -o tests/prepared_stems_tool

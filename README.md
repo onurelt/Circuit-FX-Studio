@@ -1,3 +1,28 @@
+## Current experimental version 03.12 — drag songs to choose transition start
+
+The Auto Mix screen now supports **independent one-finger song sliding**.
+Swipe anywhere across Track A's waveform to choose the outgoing
+song's transition start, or across Track B to choose the incoming
+song's transition start. Each waveform moves **under its stationary
+white start cue marker**, while the other waveform remains fixed.
+Swipe **right** to choose earlier audio; swipe **left** to choose later
+audio. A/B cue times update continuously to 1 ms resolution.
+
+Pinch the timeline to zoom for finer movement. Use FIT for a broad
+overview. During a manual drag, the app keeps the chosen cues for
+Preview and Export instead of reapplying automatic cue positions.
+Selecting a new variation card intentionally restores that candidate's
+automatic cues. An edited preview is invalidated once at the first
+actual movement; original MP3/WAV source files remain untouched.
+
+Clamps protect the track endpoints and account for the amount of
+Track B consumed when beatmatched. Touch behavior and responsiveness
+still need verification on a physical Vita. Test both song directions,
+boundaries, and preview/export with real tracks. The standard VitaSDK
+and host-tests build system remains in place.
+
+---
+
 ## Current experimental version 03.11 — audibly distinct Auto Mix
 
 This version responds to user feedback that Smooth, Energy and Vocal Blend

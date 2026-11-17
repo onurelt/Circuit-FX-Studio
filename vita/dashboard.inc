@@ -135,6 +135,8 @@ void ui_draw(uint32_t *pixels, const View *v) {
     txt(xx + 2, 56, &small, MUTED, a, 54);
   }
   rect(54, 193, 880, 1, EDGE);
+  txt(64, 82, &small, MUTED, "DRAG TRACK A LEFT / RIGHT TO SET START", 435);
+  txt(64, 199, &small, MUTED, "DRAG TRACK B LEFT / RIGHT TO SET START", 435);
   for (int d = 0; d < 2; ++d) {
     int y = d ? 253 : 135;
     uint32_t c = d ? PINK : CYAN;
@@ -212,6 +214,7 @@ void ui_draw(uint32_t *pixels, const View *v) {
   flat_button(246, 486, 212, 44, "NEXT VARIATION", WHITE, 0);
   flat_button(466, 486, 222, 44, "REGENERATE", PINK, 0);
   txt(704, 491, &small, MUTED,
+      v->mix_manual_edit ? "MANUAL A/B CUES  ·  PREVIEW" :
       v->mix_variation == AUTOMIX_VOCAL_BLEND
           ? "Aligned stems or echo (no vocals)" : "Select a mix card to compare",
       238);
